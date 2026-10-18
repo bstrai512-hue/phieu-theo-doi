@@ -57,5 +57,5 @@ export function useTreatmentData() {
     updateData(previous => previous === null ? null : typeof action === 'function' ? action(previous) : action);
   }, []);
 
-  return { data, setData, saved, storageError, loadError };
+  return { data, setData, saved, storageError, loadError, storage: services.storage ?? 'local' };
 }

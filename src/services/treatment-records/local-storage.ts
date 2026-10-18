@@ -64,6 +64,7 @@ export function createLocalTreatmentServices(storage: StorageAccess): TreatmentS
   }
 
   return {
+    storage: 'local',
     records: {
       async list() {
         return read().records.map(record => ({ id: record.id, patientName: record.patient.name }));

@@ -47,11 +47,19 @@ pnpm preview
    Khởi động lại Vite nếu vừa thay đổi `.env.local`. Khi có `VITE_CONVEX_URL`,
    module `src/services/treatment-records` khởi tạo `ConvexProvider` nội bộ.
    Giao diện chỉ dùng `TreatmentServicesProvider` và không import Convex trực tiếp.
-   Adapter dữ liệu hiện tại vẫn là localStorage, kể cả khi đã cấu hình Convex.
+   Khi có URL, ứng dụng dùng adapter Convex; khi không có URL, dùng localStorage.
+   Kết nối Convex lỗi sẽ báo lỗi, không tự chuyển sang localStorage.
 
-4. Viết schema và các hàm backend trong `convex/`. Schema hiện để trống;
-   phiếu và mẫu vẫn lưu ở localStorage, chưa đồng bộ lên Convex.
-   Hướng dẫn tích hợp: [Convex React Quickstart](https://docs.convex.dev/quickstart/react).
+4. Triển khai schema và các hàm CRUD lên deployment dev đã cấu hình:
+
+   ```sh
+   pnpm exec convex dev --once --typecheck enable
+   ```
+
+   Các bảng là `workspaces`, `treatmentRecords`, `templates`.
+   Lần mở ứng dụng đầu tiên chuyển các phiếu và mẫu local lên workspace Convex trong
+   một transaction. Dữ liệu local cũ được giữ nguyên; khi workspace đã tồn tại trên
+   Convex, dữ liệu cloud được ưu tiên và không bị ghi đè từ bản local cũ.
 
 5. Khi cần triển khai production, chạy `pnpm convex:deploy`, rồi đặt
    `VITE_CONVEX_URL` của production deployment trên dịch vụ host frontend trước khi build.
@@ -71,14 +79,26 @@ pnpm preview
 4. `useTreatmentData` đọc phiếu đầu tiên và thư viện, tự lưu sau 450 ms, tuần tự hóa
    các lần ghi qua CRUD và cung cấp trạng thái lưu cho giao diện. Giao diện vẫn chỉnh
    một phiếu như trước; chưa thêm màn hình quản lý nhiều phiếu.
-   Các thao tác CRUD độc lập, việc ghi phiếu và nhiều mẫu chưa phải một transaction.
-5. Khi thêm adapter Convex, triển khai `TreatmentServices`, rồi thay adapter mặc định
-   trong `provider.tsx`. Truy vấn, mutation và chuyển đổi kiểu dữ liệu Convex nằm trong
-   module; bên gọi giữ nguyên interface. Provider cũng nhận `services` để truyền adapter
-   vào khi kiểm thử. Chưa triển khai adapter CRUD Convex hoặc đồng bộ realtime.
+   Adapter Convex dùng `saveEditorData` để ghi phiếu và thư viện trong một transaction;
+   adapter local vẫn thực hiện các thao tác CRUD riêng.
+5. `convex.ts` triển khai CRUD theo `TreatmentServices`; `provider.tsx` chọn adapter
+   theo `VITE_CONVEX_URL`. Truy vấn, mutation và kiểu dữ liệu Convex nằm trong module.
+   Provider cũng nhận `services` để truyền adapter vào khi kiểm thử.
+6. Mỗi trình duyệt có mã workspace ngẫu nhiên 256 bit, lưu riêng theo deployment trong
+   localStorage. Backend luôn kiểm tra mã này và truy vấn theo workspace, không trả
+   dữ liệu của workspace khác. Mã là quyền truy cập dữ liệu: không đưa mã vào biến
+   `VITE_*`, URL, bản sao JSON hoặc chia sẻ công khai. Chưa có đăng nhập, phân quyền
+   theo tài khoản, chia sẻ giữa các máy hay cập nhật realtime giữa các tab. Xóa dữ
+   liệu trình duyệt sẽ mất mã truy cập; giữ bản sao JSON để khôi phục sang workspace mới.
+   Đổi origin của frontend cũng tạo vùng localStorage riêng.
 
 Chạy `pnpm test` bằng Node 22.15+ để kiểm tra CRUD, chuyển dữ liệu cũ, bản sao JSON,
-lỗi ghi và dữ liệu hỏng qua interface của module.
+lỗi ghi, dữ liệu hỏng, chọn adapter cloud và chuyển dữ liệu một lần qua interface của module.
+
+Chạy `pnpm test:convex` để kiểm thử trực tiếp trên deployment **dev** trong `.env.local`.
+Script chỉ tạo dữ liệu giả trong workspace mới, kiểm tra CRUD, đọc lại từ client mới,
+phân tách workspace và rollback transaction, rồi xóa các phiếu/mẫu kiểm thử. Một marker
+workspace trống được giữ lại. Không chạy kiểm thử này trên production.
 
 ## Tính năng
 
@@ -94,7 +114,7 @@ lỗi ghi và dữ liệu hỏng qua interface của module.
 - Nhập thông tin người bệnh, nhiều lần theo dõi.
 - Danh sách mẫu có tìm kiếm và chọn bằng bàn phím, ghép nhiều cụm và sửa tự do.
 - Thêm, sửa, xóa mẫu, lưu cả đoạn làm mẫu, sao chép dòng.
-- Tự lưu localStorage, xuất/nhập bản sao JSON có xác nhận thay thế.
+- Tự lưu trên Convex khi đã cấu hình URL, hoặc localStorage khi chưa cấu hình; xuất/nhập bản sao JSON có xác nhận thay thế.
 - In/PDF qua trình duyệt; giao diện thích ứng máy tính và điện thoại.
 
-Bản thử nghiệm chỉ lưu trên trình duyệt hiện tại, chưa có máy chủ, phân quyền, đồng bộ hoặc chữ ký xác nhận. Dùng dữ liệu giả để thử. Xóa dữ liệu trình duyệt sẽ mất phiếu nếu chưa xuất bản sao. Nội dung mẫu dùng để minh họa thao tác, người dùng cần xác nhận mọi nội dung theo thực tế.
+Bản thử nghiệm có lưu trên Convex nhưng chưa có tài khoản, phân quyền theo người dùng hoặc chữ ký xác nhận. Dùng dữ liệu giả để thử. Xóa dữ liệu trình duyệt sẽ mất dữ liệu local hoặc mã truy cập workspace Convex nếu chưa xuất bản sao. Nội dung mẫu dùng để minh họa thao tác, người dùng cần xác nhận mọi nội dung theo thực tế.

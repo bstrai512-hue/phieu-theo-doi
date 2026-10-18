@@ -3,14 +3,19 @@ import type { ReactNode } from 'react';
 import { ConvexProvider, ConvexReactClient } from 'convex/react';
 import type { TreatmentServices } from './contracts';
 import { createLocalTreatmentServices } from './local-storage';
+import { createConvexTreatmentServices } from './convex';
+import { workspaceKey } from './workspace-key';
 
 const localServices = createLocalTreatmentServices(() => window.localStorage);
-const ServicesContext = createContext<TreatmentServices>(localServices);
 const convexUrl = import.meta.env.VITE_CONVEX_URL;
 const convex = convexUrl ? new ConvexReactClient(convexUrl) : null;
+const defaultServices = convex && convexUrl
+  ? createConvexTreatmentServices(convex, () => workspaceKey(() => window.localStorage, convexUrl), localServices)
+  : localServices;
+const ServicesContext = createContext<TreatmentServices>(defaultServices);
 
 /** Provider selection belongs here; application callers only see TreatmentServices. */
-export function TreatmentServicesProvider({ children, services = localServices }: {
+export function TreatmentServicesProvider({ children, services = defaultServices }: {
   children: ReactNode;
   services?: TreatmentServices;
 }) {

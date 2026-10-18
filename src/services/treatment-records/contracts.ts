@@ -1,4 +1,4 @@
-import type { Patient, Row, Template } from './model';
+import type { Data, Patient, Row, Template } from './model';
 
 export type TreatmentRecordInput = {
   patient: Patient;
@@ -27,8 +27,11 @@ export interface Templates {
 }
 
 export interface TreatmentServices {
+  storage?: 'local' | 'cloud';
   records: TreatmentRecords;
   templates: Templates;
+  /** Optional atomic operation for adapters that support transactions. */
+  saveEditorData?(id: string, data: Data): Promise<void>;
 }
 
 export function recordInput(data: TreatmentRecordInput): TreatmentRecordInput {

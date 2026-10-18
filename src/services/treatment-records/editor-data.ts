@@ -4,6 +4,7 @@ import type { Data } from './model';
 
 /** Reconcile the editor's JSON backup shape through the two CRUD interfaces. */
 export async function persistEditorData(services: TreatmentServices, id: string, data: Data) {
+  if (services.saveEditorData) return services.saveEditorData(id, data);
   await services.records.update(id, recordInput(data));
   const current = await services.templates.list();
   for (const template of current) {
