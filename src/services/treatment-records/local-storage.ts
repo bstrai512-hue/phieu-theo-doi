@@ -2,6 +2,7 @@ import { recordInput } from './contracts';
 import type { TreatmentRecord, TreatmentRecordInput, TreatmentServices } from './contracts';
 import { defaults, validData, validTemplates } from './model';
 import type { Template } from './model';
+import { summarizeRecord } from './episodes';
 
 const KEY = 'treatment-services-v1';
 const LEGACY_KEY = 'treatment-quick-entry-v1';
@@ -67,7 +68,7 @@ export function createLocalTreatmentServices(storage: StorageAccess): TreatmentS
     storage: 'local',
     records: {
       async list() {
-        return read().records.map(record => ({ id: record.id, patientName: record.patient.name }));
+        return read().records.map(summarizeRecord);
       },
       async get(id) {
         const store = read();

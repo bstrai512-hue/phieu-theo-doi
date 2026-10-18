@@ -76,29 +76,49 @@ pnpm preview
    `treatment-quick-entry-v1` được đọc khi chưa có khóa mới `treatment-services-v1`.
    Lần ghi thành công đầu tiên lưu sang khóa mới và giữ nguyên khóa cũ.
    Bản sao JSON xuất/nhập vẫn giữ `version: 1`. Dữ liệu lưu hỏng được báo lỗi, không tự ghi đè.
-4. `useTreatmentData` đọc phiếu đầu tiên và thư viện, tự lưu sau 450 ms, tuần tự hóa
-   các lần ghi qua CRUD và cung cấp trạng thái lưu cho giao diện. Giao diện vẫn chỉnh
-   một phiếu như trước; chưa thêm màn hình quản lý nhiều phiếu.
+4. `useTreatmentData` dùng `createTreatmentWorkspace` để quản lý danh sách đợt, bản nháp,
+   tự lưu sau 450 ms và tuần tự hóa các lần ghi. Khi chuyển hoặc tạo đợt, module lưu
+   xong bản nháp trước; lỗi lưu giữ nguyên đợt đang mở và cho phép thử lại.
    Adapter Convex dùng `saveEditorData` để ghi phiếu và thư viện trong một transaction;
    adapter local vẫn thực hiện các thao tác CRUD riêng.
 5. `convex.ts` triển khai CRUD theo `TreatmentServices`; `provider.tsx` chọn adapter
    theo `VITE_CONVEX_URL`. Truy vấn, mutation và kiểu dữ liệu Convex nằm trong module.
    Provider cũng nhận `services` để truyền adapter vào khi kiểm thử.
-6. Mỗi trình duyệt có mã workspace ngẫu nhiên 256 bit, lưu riêng theo deployment trong
-   localStorage. Backend luôn kiểm tra mã này và truy vấn theo workspace, không trả
-   dữ liệu của workspace khác. Mã là quyền truy cập dữ liệu: không đưa mã vào biến
-   `VITE_*`, URL, bản sao JSON hoặc chia sẻ công khai. Chưa có đăng nhập, phân quyền
-   theo tài khoản, chia sẻ giữa các máy hay cập nhật realtime giữa các tab. Xóa dữ
-   liệu trình duyệt sẽ mất mã truy cập; giữ bản sao JSON để khôi phục sang workspace mới.
-   Đổi origin của frontend cũng tạo vùng localStorage riêng.
+6. Các trình duyệt kết nối cùng deployment dùng một workspace chung `shared`, không
+   cần mã truy cập. Ai có link đều có thể xem và sửa. Adapter đăng ký snapshot realtime;
+   khi hai người cùng sửa một phiếu/thư viện, bản nháp được giữ và người dùng chọn
+   nhận bản mới hoặc lưu bản nháp của mình. Revision backend chặn ghi từ bản cũ.
+7. Khi nâng cấp từ workspace riêng, chạy trên deployment đích sau khi cập nhật backend:
+
+   ```sh
+   pnpm exec convex run workspaces:shareExisting '{}'
+   ```
+
+   Mutation nội bộ gom phiếu và mẫu cũ vào dữ liệu chung, giữ phiếu trùng ID bằng
+   ID mới và không xóa dữ liệu cũ. Chạy lại không nhân bản phiếu đã chuyển.
 
 Chạy `pnpm test` bằng Node 22.15+ để kiểm tra CRUD, chuyển dữ liệu cũ, bản sao JSON,
 lỗi ghi, dữ liệu hỏng, chọn adapter cloud và chuyển dữ liệu một lần qua interface của module.
 
 Chạy `pnpm test:convex` để kiểm thử trực tiếp trên deployment **dev** trong `.env.local`.
-Script chỉ tạo dữ liệu giả trong workspace mới, kiểm tra CRUD, đọc lại từ client mới,
-phân tách workspace và rollback transaction, rồi xóa các phiếu/mẫu kiểm thử. Một marker
-workspace trống được giữ lại. Không chạy kiểm thử này trên production.
+Script tạo phiếu/mẫu giả có ID riêng, kiểm tra hai client dùng chung và chặn ghi
+revision cũ, rồi chỉ xóa đúng các fixture của lần chạy. Không chạy trên production.
+
+## Điều phối đợt điều trị
+
+- Sidebar có tìm kiếm không dấu theo tên, mã người bệnh hoặc số vào viện; lọc đang
+  điều trị, đã kết thúc hoặc tất cả. Trên điện thoại, mở danh sách bằng ngăn kéo.
+- “Đợt mới” mở mẫu trống ngay, không có modal và chưa tạo bản ghi. Khi bắt đầu
+  nhập thông tin hoặc nội dung theo dõi, ứng dụng tự tạo và lưu đúng một đợt mới. Chưa tách bảng bệnh
+  nhân; mỗi đợt chứa trực tiếp thông tin người bệnh và các ngày theo dõi.
+- Chuyển đợt sẽ lưu bản nháp trước. Ngày và buổi đang xem được nhớ riêng cho từng
+  đợt trong phiên; thư viện mẫu dùng chung. Đợt đã kết thúc vẫn sửa và in được,
+  có thể chọn “Tiếp tục điều trị”.
+- `status`, `startedOn`, `endedOn` là các trường tùy chọn để đọc được phiếu/bản sao cũ.
+  Phiếu cũ được xem là đang điều trị; ngày bắt đầu lấy từ ngày ghi đầu tiên.
+  Tên/mã trong sidebar lấy snapshot ngày mới nhất, hoặc thông tin gốc nếu chưa có.
+- `pnpm test` kiểm tra thêm lưu trước khi chuyển, lỗi lưu giữ bản nháp, thứ tự các
+  lần ghi bất đồng bộ, tạo đợt độc lập và tìm kiếm/bộ lọc.
 
 ## Tính năng
 
@@ -117,4 +137,4 @@ workspace trống được giữ lại. Không chạy kiểm thử này trên pr
 - Tự lưu trên Convex khi đã cấu hình URL, hoặc localStorage khi chưa cấu hình; xuất/nhập bản sao JSON có xác nhận thay thế.
 - In/PDF qua trình duyệt; giao diện thích ứng máy tính và điện thoại.
 
-Bản thử nghiệm có lưu trên Convex nhưng chưa có tài khoản, phân quyền theo người dùng hoặc chữ ký xác nhận. Dùng dữ liệu giả để thử. Xóa dữ liệu trình duyệt sẽ mất dữ liệu local hoặc mã truy cập workspace Convex nếu chưa xuất bản sao. Nội dung mẫu dùng để minh họa thao tác, người dùng cần xác nhận mọi nội dung theo thực tế.
+Bản thử nghiệm có lưu trên Convex nhưng chưa có tài khoản, phân quyền theo người dùng hoặc chữ ký xác nhận. Dùng dữ liệu giả để thử. Xóa dữ liệu trình duyệt chỉ ảnh hưởng dữ liệu local; dữ liệu Convex chung vẫn còn. Nội dung mẫu dùng để minh họa thao tác, người dùng cần xác nhận mọi nội dung theo thực tế.

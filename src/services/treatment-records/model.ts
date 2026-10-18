@@ -20,6 +20,9 @@ export type Data = {
   rows: Row[];
   templates: Template[];
   dayPatients?: Record<string, Patient>;
+  status?: 'active' | 'completed';
+  startedOn?: string;
+  endedOn?: string | null;
 };
 
 export const localTime = () => dayjs().format('YYYY-MM-DDTHH:mm');
@@ -54,6 +57,9 @@ export function validTemplates(value: unknown): value is Template[] {
 }
 export function validData(value: unknown): value is Data {
   return object(value) && value.version === 1 && validPatient(value.patient)
+    && (value.status === undefined || value.status === 'active' || value.status === 'completed')
+    && (value.startedOn === undefined || typeof value.startedOn === 'string')
+    && (value.endedOn === undefined || value.endedOn === null || typeof value.endedOn === 'string')
     && (value.dayPatients === undefined || (object(value.dayPatients) && Object.values(value.dayPatients).every(validPatient)))
     && Array.isArray(value.rows) && value.rows.length > 0
     && value.rows.every(row => object(row)

@@ -4,7 +4,7 @@ import { recordInput } from './contracts';
 import type { TreatmentServices } from './contracts';
 import { validData, validTemplates } from './model';
 
-type Client = Pick<ConvexReactClient, 'query' | 'mutation'>;
+type Client = Pick<ConvexReactClient, 'query' | 'mutation'> & Partial<Pick<ConvexReactClient, 'watchQuery'>>;
 
 /** Convex types and function references stay inside this adapter. */
 export function createConvexTreatmentServices(
@@ -34,13 +34,32 @@ export function createConvexTreatmentServices(
 
   return {
     storage: 'cloud',
+    async snapshot() { return client.query(api.workspaces.snapshot, { workspaceKey: await ready() }); },
+    async saveTemplates(templates, expectedRevision) {
+      return client.mutation(api.templates.replaceAll, { workspaceKey: await ready(), templates, expectedRevision });
+    },
+    ...(client.watchQuery ? { watch(onChange, onError) {
+      let cancelled = false;
+      let unsubscribe: (() => void) | undefined;
+      void ready().then(workspaceKey => {
+        if (cancelled || !client.watchQuery) return;
+        const watch = client.watchQuery(api.workspaces.snapshot, { workspaceKey });
+        const emit = () => {
+          try { const value = watch.localQueryResult(); if (value && !cancelled) onChange(value); }
+          catch { if (!cancelled) onError(); }
+        };
+        unsubscribe = watch.onUpdate(emit);
+        emit();
+      }, () => { if (!cancelled) onError(); });
+      return () => { cancelled = true; unsubscribe?.(); };
+    } } satisfies Pick<TreatmentServices, 'watch'> : {}),
     records: {
       async list() { return client.query(api.records.list, { workspaceKey: await ready() }); },
       async get(id) { return client.query(api.records.get, { workspaceKey: await ready(), id }); },
-      async create(input) {
+      async create(input, expectedRevision) {
         if (!validData({ version: 1, ...input, templates: [] })) throw new Error('Phiếu điều trị không hợp lệ');
         return client.mutation(api.records.create, {
-          workspaceKey: await ready(), record: { id: crypto.randomUUID(), ...recordInput(input) },
+          workspaceKey: await ready(), record: { id: crypto.randomUUID(), ...recordInput(input) }, expectedRevision,
         });
       },
       async update(id, input) {
@@ -61,10 +80,10 @@ export function createConvexTreatmentServices(
       },
       async remove(id) { await client.mutation(api.templates.remove, { workspaceKey: await ready(), id }); },
     },
-    async saveEditorData(id, data) {
+    async saveEditorData(id, data, expectedRevision) {
       if (!validData(data)) throw new Error('Dữ liệu phiếu không hợp lệ');
-      await client.mutation(api.records.saveEditor, {
-        workspaceKey: await ready(), id, input: recordInput(data), templates: data.templates,
+      return client.mutation(api.records.saveEditor, {
+        workspaceKey: await ready(), id, input: recordInput(data), templates: data.templates, expectedRevision,
       });
     },
   };

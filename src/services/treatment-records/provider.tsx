@@ -4,13 +4,12 @@ import { ConvexProvider, ConvexReactClient } from 'convex/react';
 import type { TreatmentServices } from './contracts';
 import { createLocalTreatmentServices } from './local-storage';
 import { createConvexTreatmentServices } from './convex';
-import { workspaceKey } from './workspace-key';
 
 const localServices = createLocalTreatmentServices(() => window.localStorage);
 const convexUrl = import.meta.env.VITE_CONVEX_URL;
 const convex = convexUrl ? new ConvexReactClient(convexUrl) : null;
 const defaultServices = convex && convexUrl
-  ? createConvexTreatmentServices(convex, () => workspaceKey(() => window.localStorage, convexUrl), localServices)
+  ? createConvexTreatmentServices(convex, () => 'shared', localServices)
   : localServices;
 const ServicesContext = createContext<TreatmentServices>(defaultServices);
 

@@ -1,65 +1,77 @@
 import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
-import { requireRecord, requireWorkspace } from './access';
+import { requireRecord, requireWorkspace, sharedKey, bumpRevision, checkRevision } from './access';
 import { record, recordFields, recordPatch, template } from './validators';
+import { summarizeRecord } from '../src/services/treatment-records/episodes';
+import { recordInput } from '../src/services/treatment-records/contracts';
 
 const args = { workspaceKey: v.string(), id: v.string() };
 
 export const list = query({
   args: { workspaceKey: v.string() },
   handler: async (ctx, { workspaceKey }) => {
+    workspaceKey = sharedKey(workspaceKey);
     await requireWorkspace(ctx, workspaceKey);
     const records = await ctx.db.query('treatmentRecords')
       .withIndex('by_workspace', q => q.eq('workspaceKey', workspaceKey)).collect();
-    return records.map(item => ({ id: item.id, patientName: item.patient.name }));
+    return records.map(summarizeRecord);
   },
 });
 export const get = query({
   args,
   handler: async (ctx, { workspaceKey, id }) => {
+    workspaceKey = sharedKey(workspaceKey);
     const item = await requireRecord(ctx, workspaceKey, id);
-    return { id: item.id, patient: item.patient, rows: item.rows, dayPatients: item.dayPatients };
+    return { id: item.id, ...recordInput(item) };
   },
 });
 export const create = mutation({
-  args: { workspaceKey: v.string(), record },
-  handler: async (ctx, { workspaceKey, record: item }) => {
+  args: { workspaceKey: v.string(), record, expectedRevision: v.optional(v.number()) },
+  handler: async (ctx, { workspaceKey, record: item, expectedRevision }) => {
+    workspaceKey = sharedKey(workspaceKey);
     await requireWorkspace(ctx, workspaceKey);
     if (!item.rows.length) throw new ConvexError('Phiếu phải có ít nhất một dòng');
     const existing = await ctx.db.query('treatmentRecords')
       .withIndex('by_workspace_id', q => q.eq('workspaceKey', workspaceKey).eq('id', item.id)).unique();
     if (existing) throw new ConvexError('Mã phiếu đã tồn tại');
+    await checkRevision(ctx, workspaceKey, expectedRevision);
     await ctx.db.insert('treatmentRecords', { workspaceKey, ...item });
-    return item;
+    return { ...item, workspaceRevision: await bumpRevision(ctx, workspaceKey) };
   },
 });
 export const update = mutation({
   args: { ...args, input: recordPatch },
   handler: async (ctx, { workspaceKey, id, input }) => {
+    workspaceKey = sharedKey(workspaceKey);
     const item = await requireRecord(ctx, workspaceKey, id);
     if (input.rows && !input.rows.length) throw new ConvexError('Phiếu phải có ít nhất một dòng');
     await ctx.db.patch(item._id, input);
-    return null;
+    return await bumpRevision(ctx, workspaceKey);
   },
 });
 export const remove = mutation({
   args,
   handler: async (ctx, { workspaceKey, id }) => {
+    workspaceKey = sharedKey(workspaceKey);
     const item = await requireRecord(ctx, workspaceKey, id);
     await ctx.db.delete(item._id);
-    return null;
+    return await bumpRevision(ctx, workspaceKey);
   },
 });
 
 /** A treatment sheet and its imported template library must commit together. */
 export const saveEditor = mutation({
-  args: { ...args, input: v.object(recordFields), templates: v.array(template) },
-  handler: async (ctx, { workspaceKey, id, input, templates }) => {
+  args: { ...args, input: v.object(recordFields), templates: v.array(template), expectedRevision: v.optional(v.number()) },
+  handler: async (ctx, { workspaceKey, id, input, templates, expectedRevision }) => {
+    workspaceKey = sharedKey(workspaceKey);
     const item = await requireRecord(ctx, workspaceKey, id);
     if (!input.rows.length || new Set(templates.map(value => value.id)).size !== templates.length) {
       throw new ConvexError('Phiếu hoặc thư viện mẫu không hợp lệ');
     }
-    await ctx.db.replace(item._id, { workspaceKey, id, ...input });
+    await checkRevision(ctx, workspaceKey, expectedRevision);
+    await ctx.db.replace(item._id, {
+      workspaceKey, id, status: item.status, startedOn: item.startedOn, endedOn: item.endedOn, ...input,
+    });
     const current = await ctx.db.query('templates')
       .withIndex('by_workspace', q => q.eq('workspaceKey', workspaceKey)).collect();
     const target = new Map(templates.map(value => [value.id, value]));
@@ -74,6 +86,6 @@ export const saveEditor = mutation({
       }
     }
     for (const next of target.values()) await ctx.db.insert('templates', { workspaceKey, ...next });
-    return null;
+    return await bumpRevision(ctx, workspaceKey);
   },
 });

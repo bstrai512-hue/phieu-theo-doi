@@ -5,7 +5,6 @@ import { createConvexTreatmentServices } from '../src/services/treatment-records
 import { createLocalTreatmentServices } from '../src/services/treatment-records/local-storage.ts';
 import { persistEditorData } from '../src/services/treatment-records/editor-data.ts';
 import { defaults } from '../src/services/treatment-records/model.ts';
-import { workspaceKey } from '../src/services/treatment-records/workspace-key.ts';
 
 function setup({ exists = false, initializeFails = false } = {}) {
   const calls = [];
@@ -69,7 +68,7 @@ test('failed migration rejects rather than silently saving locally, then can ret
   assert.equal(calls.filter(call => call.name === 'workspaces:initialize').length, 2);
 });
 
-test('CRUD routes through Convex with a workspace capability and immutable IDs', async () => {
+test('CRUD routes through Convex with a shared workspace scope and immutable IDs', async () => {
   const { services, calls } = setup({ exists: true });
   const { patient, rows } = defaults();
   const record = await services.records.create({ patient, rows });
@@ -95,15 +94,4 @@ test('editor save uses one atomic Convex mutation rather than separate record/te
   await persistEditorData(services, 'current', data);
   assert.deepEqual(calls.map(call => call.name), ['workspaces:exists', 'records:saveEditor']);
   assert.deepEqual(calls[1].args.templates, data.templates);
-});
-
-test('workspace capabilities persist per deployment and corrupted keys are never replaced', () => {
-  const entries = new Map();
-  const storage = () => ({ getItem: key => entries.get(key) ?? null, setItem: (key, value) => entries.set(key, value) });
-  const first = workspaceKey(storage, 'https://first.convex.cloud');
-  assert.match(first, /^[a-f0-9]{64}$/);
-  assert.equal(workspaceKey(storage, 'https://first.convex.cloud'), first);
-  assert.notEqual(workspaceKey(storage, 'https://other.convex.cloud'), first);
-  entries.set('treatment-convex-workspace-v1:https://first.convex.cloud', 'broken');
-  assert.throws(() => workspaceKey(storage, 'https://first.convex.cloud'), /không hợp lệ/);
 });

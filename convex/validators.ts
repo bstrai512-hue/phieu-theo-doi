@@ -10,10 +10,13 @@ export const row = v.object({
 });
 export const recordFields = {
   patient, rows: v.array(row), dayPatients: v.optional(v.record(v.string(), patient)),
+  status: v.optional(v.union(v.literal('active'), v.literal('completed'))),
+  startedOn: v.optional(v.string()), endedOn: v.optional(v.union(v.string(), v.null())),
 };
 export const record = v.object({ id: v.string(), ...recordFields });
 export const recordPatch = v.object({
   patient: v.optional(patient), rows: v.optional(v.array(row)), dayPatients: recordFields.dayPatients,
+  status: recordFields.status, startedOn: recordFields.startedOn, endedOn: recordFields.endedOn,
 });
 export const templateFields = {
   kind: v.union(v.literal('progress'), v.literal('orders')), text: v.string(), group: v.string(),
