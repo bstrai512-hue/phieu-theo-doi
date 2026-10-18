@@ -11,32 +11,26 @@ import { dayContent, dayRows, nextDay, copyDay, updateDay, formatDay } from './l
 import './daily.css';
 import { Dialog, DialogContent } from './components/ui/dialog';
 
-type Kind='progress'|'orders';
-type Template={id:string;kind:Kind;text:string;group:string};
-type Row={id:string;time:string;progress:string;orders:string;session?:'morning'|'afternoon'};
-type Patient={name:string;birth:string;gender:string;code:string;admission:string;department:string;room:string;bed:string;diagnosis:string;differential:string};
-type Data={version:1;patient:Patient;rows:Row[];templates:Template[];dayPatients?:Record<string,Patient>};
-const KEY='treatment-quick-entry-v1';
+import { blankPatient, makeRow, localTime, validData, useTreatmentData } from './services/treatment-records';
+import type { Data, Kind, Patient, Template } from './services/treatment-records';
+
 const uid=()=>crypto.randomUUID();
-const localTime=()=>dayjs().format('YYYY-MM-DDTHH:mm');
-const makeRow=():Row=>({id:uid(),time:localTime(),progress:'',orders:''});
-const initialTemplates:Template[]=[
- ['progress','Tỉnh, tiếp xúc tốt.','Toàn trạng'],['progress','Không sốt.','Toàn trạng'],['progress','Ăn uống được.','Toàn trạng'],['progress','Ngủ được.','Toàn trạng'],['progress','Da, niêm mạc hồng.','Thăm khám'],['progress','Tim đều.','Thăm khám'],['progress','Phổi thông khí đều hai bên.','Thăm khám'],['progress','Bụng mềm, không chướng.','Thăm khám'],['orders','Theo dõi dấu hiệu sinh tồn.','Theo dõi'],['orders','Theo dõi tình trạng ăn uống.','Theo dõi'],['orders','Theo dõi lượng nước tiểu.','Theo dõi']
-].map(([kind,text,group],i)=>({id:`seed-${i}`,kind:kind as Kind,text,group}));
-const blankPatient:Patient={name:'',birth:'',gender:'',code:'',admission:'',department:'',room:'',bed:'',diagnosis:'',differential:''};
-const defaults=():Data=>({version:1,patient:{...blankPatient},rows:[makeRow()],templates:initialTemplates});
-function validData(v:unknown):v is Data {if(!v||typeof v!=='object')return false;const d=v as Data;return d.version===1 && !!d.patient && Object.keys(blankPatient).every(k=>typeof d.patient[k as keyof Patient]==='string')&&(!d.dayPatients||(typeof d.dayPatients==='object'&&Object.values(d.dayPatients).every(p=>p&&Object.keys(blankPatient).every(k=>typeof p[k as keyof Patient]==='string'))))&&Array.isArray(d.rows)&&d.rows.length>0&&d.rows.every(r=>r&&['id','time','progress','orders'].every(k=>typeof r[k as keyof Row]==='string'))&&d.rows.every(r=>r.session===undefined||r.session==='morning'||r.session==='afternoon')&&Array.isArray(d.templates)&&d.templates.every(t=>t&&typeof t.id==='string'&&typeof t.text==='string'&&typeof t.group==='string'&&['progress','orders'].includes(t.kind));}
-function load():Data {try{const v=JSON.parse(localStorage.getItem(KEY)||'null');return validData(v)?v:defaults()}catch{return defaults()}}
 const labels={progress:'Diễn biến bệnh',orders:'Chỉ định'};
 function Picker({templates,onSelect,kind}:{templates:Template[];onSelect:(text:string)=>void;kind:Kind}){
  const [open,setOpen]=useState(false);
  return <Popover.Root open={open} onOpenChange={setOpen}><Popover.Trigger asChild><Button variant="outline" size="sm" className="picker-button"><ListPlus/><span>Chọn nội dung</span><ChevronDown className="!size-3 ml-2"/></Button></Popover.Trigger><Popover.Portal><Popover.Content align="start" sideOffset={6} className="z-30 w-[min(360px,90vw)] rounded-xl border bg-white p-1.5 shadow-xl"><Command label={`Chọn ${labels[kind]}`}><div className="flex items-center gap-2 border-b px-2"><Search size={16} className="text-muted-foreground"/><Command.Input autoFocus placeholder="Gõ để tìm nội dung…" className="h-11 w-full text-sm outline-none"/></div><Command.List className="max-h-64 overflow-y-auto p-1"><Command.Empty className="p-4 text-sm text-muted-foreground">Chưa có mẫu phù hợp. Bạn có thể nhập trực tiếp.</Command.Empty>{Array.from(new Set(templates.map(t=>t.group))).map(group=><Command.Group key={group} heading={group}>{templates.filter(t=>t.group===group).map(t=><Command.Item key={t.id} value={t.text} onSelect={()=>{onSelect(t.text);setOpen(false)}} className="flex cursor-pointer items-center justify-between rounded-md px-2 py-2.5 text-sm data-[selected=true]:bg-emerald-50 data-[selected=true]:text-emerald-800"><span>{t.text}</span><Plus size={14}/></Command.Item>)}</Command.Group>)}</Command.List><div className="border-t px-3 py-2 text-[11px] text-muted-foreground">↑ ↓ di chuyển · Enter để chọn · Esc để đóng</div></Command></Popover.Content></Popover.Portal></Popover.Root>
 }
 export default function App(){
+ const state=useTreatmentData();
+ if(state.loadError)return <div role="alert" className="p-6"><p>Không thể đọc dữ liệu: {state.loadError}</p><Button onClick={()=>window.location.reload()}>Thử lại</Button></div>;
+ if(!state.data)return <div role="status" className="p-6">Đang tải phiếu điều trị…</div>;
+ return <TreatmentEditor {...state} data={state.data}/>;
+}
+function TreatmentEditor({data,setData,saved,storageError}:Omit<ReturnType<typeof useTreatmentData>,'data'> & {data:Data}){
  const [printPreview,setPrintPreview]=useState(false); const [printReady,setPrintReady]=useState(false); const printFrame=useRef<HTMLIFrameElement>(null);
- const [data,setData]=useState<Data>(load);const [saved,setSaved]=useState(true);const [storageError,setStorageError]=useState(false);const [toast,setToast]=useState('');const [library,setLibrary]=useState(false);const [query,setQuery]=useState('');const [kind,setKind]=useState<Kind>('progress');const [templateText,setTemplateText]=useState('');const [editTemplate,setEditTemplate]=useState<string|null>(null);const [saveModal,setSaveModal]=useState<{kind:Kind;text:string}|null>(null);const [reset,setReset]=useState(false);const [help,setHelp]=useState(false);const fileRef=useRef<HTMLInputElement>(null);
+ const [toast,setToast]=useState('');const [library,setLibrary]=useState(false);const [query,setQuery]=useState('');const [kind,setKind]=useState<Kind>('progress');const [templateText,setTemplateText]=useState('');const [editTemplate,setEditTemplate]=useState<string|null>(null);const [saveModal,setSaveModal]=useState<{kind:Kind;text:string}|null>(null);const [reset,setReset]=useState(false);const [help,setHelp]=useState(false);const fileRef=useRef<HTMLInputElement>(null);
  const notify=(s:string)=>setToast(s);
- useEffect(()=>{setSaved(false);const timer=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify(data));setSaved(true);setStorageError(false)}catch{setStorageError(true)}},450);return()=>clearTimeout(timer)},[data]);
+
  useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)},[toast]);
  const patient=(k:keyof Patient,value:string)=>setData(d=>({...d,dayPatients:{...d.dayPatients,[activeDay]:{...(d.dayPatients?.[activeDay]??d.patient),[k]:value}}}));
  const days=[...new Set(data.rows.map(r=>r.time.slice(0,10)))].sort();
