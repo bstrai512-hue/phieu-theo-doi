@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Activity, BookOpen, CalendarDays, CircleHelp, FolderHeart, PanelLeft, Plus, Search, ShieldCheck } from 'lucide-react';
+import { BookOpen, CalendarDays, CircleHelp, FolderHeart, PanelLeft, Plus, Search, ShieldCheck } from 'lucide-react';
 import { Button } from './ui/button';
 import { Dialog, DialogContent } from './ui/dialog';
 import type { TreatmentRecordSummary } from '../services/treatment-records/contracts';
@@ -24,7 +24,7 @@ export function EpisodeSidebar(props: Props) {
     if (await props.onNew()) { props.onFilter('active'); props.onQuery(''); setDrawer(false); }
   };
   const content = (mobile = false) => <>
-    <div className="episode-brand"><span className="episode-brand-mark"><Activity size={22}/></span><div><strong>CareNote</strong><span>Phiếu theo dõi điều trị</span></div></div>
+    <div className="episode-brand"><img className="episode-brand-mark" src="/noi-ho-hap-logo.png" alt="" width="32" height="36"/><div><strong>Nội Hô Hấp Bình Dương</strong><span>Phiếu theo dõi điều trị</span></div></div>
     <div className="episode-sidebar-heading"><h2>Đợt điều trị</h2><span>{activeCount} đang điều trị</span></div>
     <Button className="episode-create" onClick={openCreate} disabled={props.busy}><Plus size={16}/>Đợt mới</Button>
     <label className="episode-search"><Search size={16}/><input aria-label="Tìm đợt điều trị" placeholder="Tên, mã, số vào viện…" value={props.query} onChange={event => props.onQuery(event.target.value)}/></label>

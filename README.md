@@ -1,4 +1,4 @@
-# CareNote — Phiếu theo dõi điều trị
+# Nội Hô Hấp Bình Dương — Phiếu theo dõi điều trị
 
 React + TypeScript + Vite, Tailwind CSS 4; các thành phần shadcn/ui dựa trên Radix UI và cmdk.
 
