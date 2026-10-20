@@ -1,9 +1,12 @@
-import type { Data, Patient, Row, Template } from './model';
+import type { CareDefaults, CareDefaultsSnapshot } from '../../forms/care-defaults-model';
+import { parseData } from './model';
+import type { Data, Patient, PatientReview, Template } from './model';
+import type { Forms } from '../../forms/model';
 
 export type TreatmentRecordInput = {
   patient: Patient;
-  rows: Row[];
-  dayPatients?: Record<string, Patient>;
+  forms: Forms;
+  patientReview?: PatientReview;
   status?: 'active' | 'completed';
   startedOn?: string;
   endedOn?: string | null;
@@ -23,7 +26,7 @@ export interface TreatmentRecords {
   get(id: string): Promise<TreatmentRecord>;
   create(input: TreatmentRecordInput, expectedRevision?: number): Promise<TreatmentRecord>;
   update(id: string, input: Partial<TreatmentRecordInput>): Promise<void>;
-  remove(id: string): Promise<void>;
+  remove(id: string): Promise<number | void>;
 }
 
 export interface Templates {
@@ -33,7 +36,14 @@ export interface Templates {
   remove(id: string): Promise<void>;
 }
 
+export interface CareDefaultsStore {
+  get(): Promise<CareDefaultsSnapshot>;
+  update(value: CareDefaults, expectedRevision: number): Promise<CareDefaultsSnapshot>;
+  watch?(onChange:(value:CareDefaultsSnapshot)=>void,onError:()=>void):()=>void;
+}
+
 export interface TreatmentServices {
+  careDefaults: CareDefaultsStore;
   storage?: 'local' | 'cloud';
   records: TreatmentRecords;
   templates: Templates;
@@ -46,9 +56,18 @@ export interface TreatmentServices {
 
 export function recordInput(data: TreatmentRecordInput): TreatmentRecordInput {
   return {
-    patient: data.patient, rows: data.rows, dayPatients: data.dayPatients,
+    patient: data.patient, forms: data.forms,
+    ...(data.patientReview ? { patientReview: data.patientReview } : {}),
     ...(data.status !== undefined ? { status: data.status } : {}),
     ...(data.startedOn !== undefined ? { startedOn: data.startedOn } : {}),
     ...(data.endedOn !== undefined ? { endedOn: data.endedOn } : {}),
   };
+}
+
+/** Accept old storage records at the adapter seam; callers always receive v2. */
+export function readRecord(value: unknown): TreatmentRecord {
+  const raw = value as Record<string, unknown>;
+  if (!raw || typeof raw.id !== 'string') throw new Error('Mã đợt không hợp lệ');
+  const data = parseData({ ...raw, version: raw.forms ? 2 : 1, templates: [] });
+  return { id: raw.id, ...recordInput(data), ...(typeof raw.workspaceRevision === 'number' ? { workspaceRevision: raw.workspaceRevision } : {}) };
 }

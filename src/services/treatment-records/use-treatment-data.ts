@@ -12,6 +12,6 @@ export function useTreatmentData() {
   }, [workspace]);
   return {
     ...state, setData: workspace.setData, flush: workspace.flush,
-    selectRecord: workspace.selectRecord, newDraft: workspace.newDraft, changeStatus: workspace.changeStatus, resolveConflict: workspace.resolveConflict,
+    selectRecord: workspace.selectRecord, newDraft: workspace.newDraft, deleteRecord: workspace.deleteRecord, changeStatus: workspace.changeStatus, resolveConflict: workspace.resolveConflict,
   };
 }

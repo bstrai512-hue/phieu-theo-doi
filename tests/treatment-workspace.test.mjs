@@ -104,16 +104,16 @@ test('completed episodes remain editable and can resume without losing content',
   try {
     await workspace.load();
     const id = workspace.getSnapshot().recordId;
-    const row = workspace.getSnapshot().data.rows[0];
+    const row = workspace.getSnapshot().data.forms.treatment.rows[0];
     assert.equal(await workspace.changeStatus('completed'), true);
     assert.equal((await services.records.get(id)).status, 'completed');
     assert.match((await services.records.get(id)).endedOn, /^\d{4}-\d{2}-\d{2}$/);
-    workspace.setData(data => ({ ...data, rows: [{ ...row, progress: 'Chỉnh sửa sau kết thúc' }] }));
+    workspace.setData(data => ({ ...data, forms: { ...data.forms, treatment: { rows: [{ ...row, progress: 'Chỉnh sửa sau kết thúc' }] } } }));
     await workspace.flush();
-    assert.equal((await services.records.get(id)).rows[0].progress, 'Chỉnh sửa sau kết thúc');
+    assert.equal((await services.records.get(id)).forms.treatment.rows[0].progress, 'Chỉnh sửa sau kết thúc');
     assert.equal(await workspace.changeStatus('active'), true);
     assert.equal((await services.records.get(id)).endedOn, null);
-    assert.equal((await services.records.get(id)).rows[0].progress, 'Chỉnh sửa sau kết thúc');
+    assert.equal((await services.records.get(id)).forms.treatment.rows[0].progress, 'Chỉnh sửa sau kết thúc');
   } finally { workspace.dispose(); }
 });
 
@@ -132,10 +132,10 @@ test('initial loads and opening blank drafts never create empty records', async 
   } finally { workspace.dispose(); }
 });
 
-test('old records use the latest patient snapshot and infer active status and start date', () => {
+test('summaries use shared patient information and infer active status and start date', () => {
   const data = defaults();
-  data.rows[0].time = '2026-10-19T08:00';
-  data.dayPatients = { '2026-10-19': { ...data.patient, name: 'Đặng Thị An', code: 'BN001', admission: 'VV002' } };
+  data.forms.treatment.rows[0].time = '2026-10-19T08:00';
+  data.patient = { ...data.patient, name: 'Đặng Thị An', code: 'BN001', admission: 'VV002' };
   const summary = summarizeRecord({ id: 'legacy', ...recordInput(data) });
   assert.equal(summary.patientName, 'Đặng Thị An');
   assert.equal(summary.status, 'active');
@@ -177,7 +177,10 @@ async function realtimeSetup() {
   const listeners = new Set();
   const snapshot = async () => ({revision:version,records:await Promise.all((await local.records.list()).map(item=>local.records.get(item.id))),templates:await local.templates.list()});
   const {persistEditorData} = await import('../src/services/treatment-records/editor-data.ts');
-  const services = {...local, snapshot, watch(listener) { listeners.add(listener); return ()=>listeners.delete(listener); },
+  const services = {...local, records: {...local.records, async remove(id) {
+    await local.records.remove(id); version++;
+    const next = await snapshot(); listeners.forEach(listener=>listener(next)); return version;
+  }}, snapshot, watch(listener) { listeners.add(listener); return ()=>listeners.delete(listener); },
     async saveEditorData(id,data,expected) {
       if(expected!==version)throw new Error('Conflict');
       await persistEditorData(local,id,data); version++;
@@ -209,4 +212,85 @@ test('realtime changes preserve dirty drafts and require an explicit conflict de
     assert.equal((await local.records.get('current')).patient.name,'Bản nháp máy hai');
     assert.equal(first.getSnapshot().data.patient.name,'Bản nháp máy hai');
   } finally {first.dispose();second.dispose();}
+});
+
+
+test('deleting the open episode retains other episodes and templates and opens an unsaved blank', async () => {
+  const {services, workspace} = setup();
+  const other = await services.records.create(named('Giữ lại'));
+  try {
+    await workspace.load();
+    const deleted = workspace.getSnapshot().recordId;
+    workspace.setData(data=>({...data,templates:[...data.templates,{id:'keep',kind:'orders',text:'Giữ mẫu',group:'Mẫu của tôi'}]}));
+    assert.equal(await workspace.deleteRecord(),true);
+    assert.equal(workspace.getSnapshot().recordId,null);
+    assert.equal(workspace.getSnapshot().data.patient.name,'');
+    assert.equal(workspace.getSnapshot().data.templates.at(-1).id,'keep');
+    assert.deepEqual((await services.records.list()).map(item=>item.id),[other.id]);
+    await workspace.flush();
+    await assert.rejects(services.records.get(deleted));
+    assert.equal((await services.templates.list()).at(-1).id,'keep');
+  } finally {workspace.dispose();}
+});
+
+test('a failed deletion keeps the current episode and can be retried',async()=>{
+  const {services,workspace}=setup();
+  const remove=services.records.remove;
+  try {
+    await workspace.load();
+    const before=workspace.getSnapshot();
+    services.records.remove=async()=>{throw new Error('Offline');};
+    assert.equal(await workspace.deleteRecord(),false);
+    assert.equal(workspace.getSnapshot().recordId,before.recordId);
+    assert.deepEqual(workspace.getSnapshot().data,before.data);
+    assert.match(workspace.getSnapshot().actionError,/Không thể xóa/);
+    services.records.remove=remove;
+    assert.equal(await workspace.deleteRecord(),true);
+    assert.equal((await services.records.list()).length,0);
+  } finally {workspace.dispose();}
+});
+
+test('remote deletion opens a blank in a clean editor and never recreates the episode',async()=>{
+  const {first,second,local}=await realtimeSetup();
+  try {
+    assert.equal(await first.deleteRecord(),true);
+    assert.equal(second.getSnapshot().recordId,null);
+    await second.flush();
+    assert.equal((await local.records.list()).length,0);
+  } finally {first.dispose();second.dispose();}
+});
+
+test('remote deletion preserves a dirty draft as a conflict without recreating deleted data',async()=>{
+  const {first,second,local}=await realtimeSetup();
+  try {
+    second.setData(data=>({...data,patient:{...data.patient,name:'Bản nháp máy hai'}}));
+    assert.equal(await first.deleteRecord(),true);
+    assert.equal(second.getSnapshot().conflict,true);
+    assert.equal(second.getSnapshot().data.patient.name,'Bản nháp máy hai');
+    await assert.rejects(second.flush());
+    await second.resolveConflict(false);
+    assert.equal(second.getSnapshot().recordId,null);
+    assert.equal((await local.records.list()).length,0);
+  } finally {first.dispose();second.dispose();}
+});
+
+test('entering only infusion or care data creates an episode and retains all forms after switching', async () => {
+  const { makeInfusion } = await import('../src/forms/model.ts');
+  for (const kind of ['infusion', 'care']) {
+    const { services, workspace } = setup();
+    try {
+      await workspace.load();
+      await workspace.newDraft();
+      workspace.setData(data => ({ ...data, forms: { ...data.forms, [kind]: kind === 'infusion'
+        ? { rows: [{ ...makeInfusion('2026-10-20'), fluid: 'Dịch thử' }] }
+        : { ...data.forms.care, observations: [{ id: 'obs', time: '2026-10-20T08:00', values: { pulse: '80' } }] } } }));
+      await workspace.flush();
+      const id = workspace.getSnapshot().recordId;
+      assert.ok(id);
+      const before = (await services.records.get(id)).forms;
+      await workspace.newDraft();
+      assert.equal(await workspace.selectRecord(id), true);
+      assert.deepEqual(workspace.getSnapshot().data.forms, before);
+    } finally { workspace.dispose(); }
+  }
 });

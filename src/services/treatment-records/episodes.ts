@@ -2,8 +2,8 @@ import type { TreatmentRecord, TreatmentRecordSummary } from './contracts';
 
 /** Old records have no metadata; retain their snapshots and infer the display values. */
 export function summarizeRecord(record: TreatmentRecord): TreatmentRecordSummary {
-  const days = record.rows.map(row => row.time.slice(0, 10)).sort();
-  const patient = record.dayPatients?.[days.at(-1) ?? ''] ?? record.patient;
+  const days = record.forms.treatment.rows.map(row => row.time.slice(0, 10)).sort();
+  const patient = record.patient;
   return {
     id: record.id, patientName: patient.name, patientCode: patient.code, admission: patient.admission,
     startedOn: record.startedOn ?? days[0] ?? '', status: record.status ?? 'active',

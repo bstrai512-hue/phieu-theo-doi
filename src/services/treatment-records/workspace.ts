@@ -1,3 +1,4 @@
+import { hasFormContent } from '../../forms/model';
 import type { SetStateAction } from 'react';
 import type { TreatmentRecord, TreatmentRecordInput, TreatmentRecordSummary, TreatmentServices, TreatmentSnapshot } from './contracts';
 import { recordInput } from './contracts';
@@ -43,7 +44,7 @@ export function createTreatmentWorkspace(services: TreatmentServices) {
   function baseline(data: Data) { baselineRecord = recordJson(data); baselineLibrary = libraryJson(data.templates); }
   function open(record: TreatmentRecord, templates: Data['templates'], records = state.records) {
     revision++;
-    const data: Data = { version: 1, ...recordInput(record), templates };
+    const data: Data = { version: 2, ...recordInput(record), templates };
     baseline(data);
     publish({ recordId: record.id, viewKey: record.id, data, records, saved: true, storageError: false, actionError: '', conflict: false });
   }
@@ -79,7 +80,7 @@ export function createTreatmentWorkspace(services: TreatmentServices) {
     }
     cloudRevision = snapshot.revision;
     if (state.recordId && record) {
-      const data: Data = { version: 1, ...recordInput(record), templates: snapshot.templates };
+      const data: Data = { version: 2, ...recordInput(record), templates: snapshot.templates };
       baseline(data); publish({ data, records, conflict: false });
     } else if (state.recordId) {
       publish({ records }); blank(snapshot.templates);
@@ -163,14 +164,14 @@ export function createTreatmentWorkspace(services: TreatmentServices) {
     });
     return queue;
   }
-  async function perform(action: () => Promise<void>): Promise<boolean> {
+  async function perform(action: () => Promise<void>, errorMessage?: string): Promise<boolean> {
     if (state.busy) return false;
     publish({ busy: true, actionError: '' });
     try { await flush(); await action(); return true; }
     catch {
       if (!state.conflict) publish({ actionError: state.storageError
         ? 'Chưa lưu được đợt đang mở. Hãy thử lưu lại trước khi chuyển hoặc mở mẫu trống.'
-        : 'Không thể mở hoặc cập nhật đợt điều trị. Nội dung đang nhập được giữ nguyên; hãy thử lại.' });
+        : errorMessage ?? 'Không thể mở hoặc cập nhật đợt điều trị. Nội dung đang nhập được giữ nguyên; hãy thử lại.' });
       return false;
     } finally { publish({ busy: false }); drain(); }
   }
@@ -188,6 +189,16 @@ export function createTreatmentWorkspace(services: TreatmentServices) {
     });
   }
   function newDraft() { return perform(async () => { blank(state.data?.templates ?? []); }); }
+  function deleteRecord() {
+    if (state.busy || !state.recordId) return Promise.resolve(false);
+    const id = state.recordId;
+    return perform(async () => {
+      const nextRevision = await services.records.remove(id);
+      if (typeof nextRevision === 'number') cloudRevision = nextRevision;
+      publish({ records: state.records.filter(record => record.id !== id) });
+      blank(state.data?.templates ?? []);
+    }, 'Không thể xóa đợt điều trị. Nội dung được giữ nguyên; hãy thử lại.');
+  }
   function changeStatus(status: 'active' | 'completed') {
     if (state.busy || !state.recordId) return Promise.resolve(false);
     setData(data => ({ ...data, status, endedOn: status === 'completed' ? localTime().slice(0, 10) : null }));
@@ -212,12 +223,11 @@ export function createTreatmentWorkspace(services: TreatmentServices) {
   return {
     getSnapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    load, start, setData, flush, selectRecord, newDraft, changeStatus, resolveConflict,
+    load, start, setData, flush, selectRecord, newDraft, deleteRecord, changeStatus, resolveConflict,
     dispose() { generation++; clearTimeout(timer); unsubscribe?.(); unsubscribe = undefined; },
   };
 }
 function hasEpisodeContent(data: Data): boolean {
   const patientHasContent = (patient: Data['patient']) => Object.values(patient).some(value => value.trim());
-  return patientHasContent(data.patient) || Object.values(data.dayPatients ?? {}).some(patientHasContent)
-    || data.rows.some(row => row.progress.trim() || row.orders.trim());
+  return patientHasContent(data.patient) || hasFormContent(data.forms);
 }

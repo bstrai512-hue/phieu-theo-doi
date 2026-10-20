@@ -1,6 +1,6 @@
 import type { ConvexReactClient } from 'convex/react';
 import { api } from '../../../convex/_generated/api.js';
-import { recordInput } from './contracts';
+import { recordInput, readRecord } from './contracts';
 import type { TreatmentServices } from './contracts';
 import { validData, validTemplates } from './model';
 
@@ -34,7 +34,21 @@ export function createConvexTreatmentServices(
 
   return {
     storage: 'cloud',
-    async snapshot() { return client.query(api.workspaces.snapshot, { workspaceKey: await ready() }); },
+    careDefaults: {
+      async get(){return client.query(api.careDefaults.get,{workspaceKey:await ready()})},
+      async update(value,expectedRevision){return client.mutation(api.careDefaults.update,{workspaceKey:await ready(),value,expectedRevision})},
+      watch(onChange,onError){
+        let cancelled=false;let unsubscribe:(()=>void)|undefined;
+        void ready().then(workspaceKey=>{
+          if(cancelled||!client.watchQuery)return;
+          const query=client.watchQuery(api.careDefaults.get,{workspaceKey});
+          const emit=()=>{try{const value=query.localQueryResult();if(value&&!cancelled)onChange(value)}catch{if(!cancelled)onError()}};
+          unsubscribe=query.onUpdate(emit);emit();
+        },()=>{if(!cancelled)onError()});
+        return()=>{cancelled=true;unsubscribe?.()};
+      },
+    },
+    async snapshot() { const snapshot = await client.query(api.workspaces.snapshot, { workspaceKey: await ready() }); return { ...snapshot, records: snapshot.records.map(readRecord) }; },
     async saveTemplates(templates, expectedRevision) {
       return client.mutation(api.templates.replaceAll, { workspaceKey: await ready(), templates, expectedRevision });
     },
@@ -45,7 +59,7 @@ export function createConvexTreatmentServices(
         if (cancelled || !client.watchQuery) return;
         const watch = client.watchQuery(api.workspaces.snapshot, { workspaceKey });
         const emit = () => {
-          try { const value = watch.localQueryResult(); if (value && !cancelled) onChange(value); }
+          try { const value = watch.localQueryResult(); if (value && !cancelled) onChange({ ...value, records: value.records.map(readRecord) }); }
           catch { if (!cancelled) onError(); }
         };
         unsubscribe = watch.onUpdate(emit);
@@ -55,17 +69,17 @@ export function createConvexTreatmentServices(
     } } satisfies Pick<TreatmentServices, 'watch'> : {}),
     records: {
       async list() { return client.query(api.records.list, { workspaceKey: await ready() }); },
-      async get(id) { return client.query(api.records.get, { workspaceKey: await ready(), id }); },
+      async get(id) { return readRecord(await client.query(api.records.get, { workspaceKey: await ready(), id })); },
       async create(input, expectedRevision) {
-        if (!validData({ version: 1, ...input, templates: [] })) throw new Error('Phiếu điều trị không hợp lệ');
-        return client.mutation(api.records.create, {
+        if (!validData({ version: 2, ...input, templates: [] })) throw new Error('Phiếu điều trị không hợp lệ');
+        return readRecord(await client.mutation(api.records.create, {
           workspaceKey: await ready(), record: { id: crypto.randomUUID(), ...recordInput(input) }, expectedRevision,
-        });
+        }));
       },
       async update(id, input) {
         await client.mutation(api.records.update, { workspaceKey: await ready(), id, input });
       },
-      async remove(id) { await client.mutation(api.records.remove, { workspaceKey: await ready(), id }); },
+      async remove(id) { return client.mutation(api.records.remove, { workspaceKey: await ready(), id }); },
     },
     templates: {
       async list() { return client.query(api.templates.list, { workspaceKey: await ready() }); },

@@ -9,6 +9,7 @@
  */
 
 import type * as access from "../access.js";
+import type * as careDefaults from "../careDefaults.js";
 import type * as records from "../records.js";
 import type * as templates from "../templates.js";
 import type * as validators from "../validators.js";
@@ -22,6 +23,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   access: typeof access;
+  careDefaults: typeof careDefaults;
   records: typeof records;
   templates: typeof templates;
   validators: typeof validators;

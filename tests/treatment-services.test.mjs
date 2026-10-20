@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createLocalTreatmentServices } from '../src/services/treatment-records/local-storage.ts';
-import { defaults, validData } from '../src/services/treatment-records/model.ts';
+import { defaults, validData, parseData } from '../src/services/treatment-records/model.ts';
 import { recordInput } from '../src/services/treatment-records/contracts.ts';
 import { persistEditorData } from '../src/services/treatment-records/editor-data.ts';
 
@@ -25,7 +25,8 @@ function setup(legacy) {
 }
 
 test('legacy data retains patient snapshots, session-less rows, template IDs and backup format', async () => {
-  const legacy = defaults();
+  const current = defaults();
+  const legacy = { version: 1, patient: current.patient, rows: current.forms.treatment.rows, templates: current.templates };
   legacy.patient.name = 'Người bệnh thử';
   legacy.dayPatients = { '2026-10-18': { ...legacy.patient, bed: '12' } };
   legacy.rows[0].time = '2026-10-18T08:00';
@@ -33,7 +34,9 @@ test('legacy data retains patient snapshots, session-less rows, template IDs and
   const summaries = await services.records.list();
   const record = await services.records.get(summaries[0].id);
   const templates = await services.templates.list();
-  assert.deepEqual({ version: 1, ...recordInput(record), templates }, legacy);
+  assert.deepEqual({ version: 2, ...recordInput(record), templates }, parseData(legacy));
+  assert.equal(record.patientReview.resolved, false);
+  assert.equal(record.patientReview.byDay['2026-10-18'].bed, '12');
   await services.records.update(record.id, { patient: { ...record.patient, room: 'A' } });
   assert.equal((await reopen().records.get(record.id)).patient.room, 'A');
   assert.equal(entries.get('treatment-quick-entry-v1'), JSON.stringify(legacy));
@@ -46,17 +49,17 @@ test('record CRUD persists partial updates without modifying other records or te
   const original = (await services.records.list())[0];
   const created = await services.records.create(recordInput(defaults()));
   const snapshot = { ...created.patient, bed: '55' };
-  await services.records.update(created.id, { dayPatients: { '2026-10-18': snapshot } });
+  await services.records.update(created.id, { patient: snapshot });
   const updated = await reopen().records.get(created.id);
-  assert.deepEqual(updated.patient, created.patient);
-  assert.equal(updated.dayPatients['2026-10-18'].bed, '55');
+  assert.equal(updated.patient.bed, '55');
+  assert.deepEqual(updated.forms, created.forms);
   assert.deepEqual(await services.templates.list(), templates);
   assert.equal((await services.records.list()).length, 2);
   await services.records.remove(created.id);
   await assert.rejects(services.records.get(created.id), /Không tìm thấy/);
   assert.equal((await services.records.get(original.id)).id, original.id);
-  await assert.rejects(services.records.update(original.id, { rows: [] }), /không hợp lệ/);
-  assert.ok((await services.records.get(original.id)).rows.length);
+  await assert.rejects(services.records.update(original.id, { forms: { ...created.forms, treatment: { rows: [] } } }), /không hợp lệ/);
+  assert.ok((await services.records.get(original.id)).forms.treatment.rows.length);
 });
 
 test('template CRUD preserves imported IDs and does not modify the treatment record', async () => {
@@ -101,10 +104,10 @@ test('returned data cannot mutate subsequent reads', async () => {
   const templates = await services.templates.list();
   templates.length = 0;
   assert.ok((await services.templates.list()).length);
-  assert.equal(validData({ version: 1, ...recordInput(record), templates }), true);
+  assert.equal(validData({ version: 2, ...recordInput(record), templates }), true);
 });
 
-test('editor persistence applies template create/update/delete and restores a version 1 backup', async () => {
+test('editor persistence applies template create/update/delete and restores a version 2 backup', async () => {
   const legacy = defaults();
   const { services, reopen } = setup(legacy);
   const summary = (await services.records.list())[0];
@@ -117,8 +120,57 @@ test('editor persistence applies template create/update/delete and restores a ve
   await persistEditorData(services, summary.id, next);
   const reopened = reopen();
   const record = await reopened.records.get(summary.id);
-  assert.deepEqual({ version: 1, ...recordInput(record), templates: await reopened.templates.list() },
-    { ...next, dayPatients: undefined });
+  assert.deepEqual({ version: 2, ...recordInput(record), templates: await reopened.templates.list() },
+    next);
   await persistEditorData(reopened, summary.id, next);
   assert.equal((await reopened.templates.list()).length, 2);
+});
+
+test('v1 local store is backed up before migration; all old patient values are retained', async () => {
+  const data = defaults();
+  const old = { version: 1, records: [{ id: 'old', patient: data.patient, rows: data.forms.treatment.rows,
+    dayPatients: { '2026-10-20': { ...data.patient, name: 'Ngày cũ' } } }], templates: data.templates };
+  const { services, entries, reopen } = setup();
+  const raw = JSON.stringify(old);
+  entries.set('treatment-services-v1', raw);
+  const record = await services.records.get('old');
+  assert.equal(entries.get('treatment-services-v1'), raw, 'read does not mutate storage');
+  assert.equal(record.patient.name, 'Ngày cũ');
+  await services.records.update('old', { patient: { ...record.patient, name: 'Thông tin chung' } });
+  assert.equal(entries.get('treatment-services-before-v2'), raw);
+  const saved = await reopen().records.get('old');
+  assert.equal(saved.patientReview.byDay['2026-10-20'].name, 'Ngày cũ');
+  assert.equal(saved.patientReview.base.name, '');
+});
+
+test('three forms survive updates, reopen and backup restore independently', async () => {
+  const { makeInfusion } = await import('../src/forms/model.ts');
+  const { services, reopen } = setup();
+  const data = defaults();
+  data.patient.name = 'Thông tin chung';
+  data.forms.treatment.rows[0].progress = 'Diễn biến riêng';
+  data.forms.infusion.rows = [{ ...makeInfusion('2026-10-20'), fluid: 'Dữ liệu thử', rate: '20' }];
+  data.forms.care.observations = [{ id: 'obs', time: '2026-10-20T08:00', values: { pulse: '80', nursing: 'CS.1' } }];
+  data.forms.care.diagnoses = [{ id: 'diag', text: 'Theo dõi', goals: [{ id: 'goal', text: 'Mục tiêu', achieved: true }] }];
+  const created = await services.records.create(recordInput(data));
+  await persistEditorData(services, created.id, data);
+  const reopened = await reopen().records.get(created.id);
+  assert.deepEqual(reopened.forms, data.forms);
+  const backup = JSON.parse(JSON.stringify({ version: 2, ...recordInput(reopened), templates: data.templates }));
+  assert.deepEqual(parseData(backup), data);
+  await services.records.update(created.id, { patient: { ...data.patient, bed: '6' } });
+  assert.deepEqual((await services.records.get(created.id)).forms, data.forms);
+  await services.records.update(created.id, { forms: { ...data.forms, infusion: { rows: [] } } });
+  const after = await services.records.get(created.id);
+  assert.deepEqual(after.forms.treatment, data.forms.treatment);
+  assert.deepEqual(after.forms.care, data.forms.care);
+});
+
+test('invalid new form data rejects without overwriting the prior record', async () => {
+  const { services } = setup();
+  const before = await services.records.get('current');
+  const forms = structuredClone(before.forms);
+  forms.care.observations = [{ id: 'obs', time: '2026-10-20T08:00', values: { unknownField: 'bad' } }];
+  await assert.rejects(services.records.update('current', { forms }), /không hợp lệ/);
+  assert.deepEqual(await services.records.get('current'), before);
 });

@@ -21,22 +21,40 @@ let templateId;
 try {
   const data = defaults();
   data.patient.name = fixtureId;
-  await client.mutation(api.records.create, { workspaceKey, record: { id: fixtureId, patient: data.patient, rows: data.rows } });
+  await client.mutation(api.records.create, { workspaceKey, record: { id: fixtureId, patient: data.patient, forms: data.forms } });
   created = true;
   assert.equal((await second.query(api.records.get, { workspaceKey: 'a'.repeat(64), id: fixtureId })).patient.name, fixtureId);
   const before = await second.query(api.workspaces.snapshot, { workspaceKey });
   await client.mutation(api.records.update, { workspaceKey, id: fixtureId, input: { patient: { ...data.patient, bed: 'TEST' } } });
   await assert.rejects(client.mutation(api.records.saveEditor, {
-    workspaceKey, id: fixtureId, input: { patient: data.patient, rows: data.rows },
+    workspaceKey, id: fixtureId, input: { patient: data.patient, forms: data.forms },
     templates: before.templates, expectedRevision: before.revision,
   }));
   assert.equal((await second.query(api.records.get, { workspaceKey, id: fixtureId })).patient.bed, 'TEST');
+  // Upgrade data is protected from saves by a stale frontend that only knows rows.
+  const latest = await second.query(api.workspaces.snapshot, { workspaceKey });
+  await assert.rejects(client.mutation(api.records.saveEditor, {
+    workspaceKey, id: fixtureId, input: { patient: data.patient, rows: data.forms.treatment.rows },
+    templates: latest.templates, expectedRevision: latest.revision,
+  }), /tải lại trang/);
+  const { makeInfusion } = await import('../src/forms/model.ts');
+  data.forms.infusion.rows = [{ ...makeInfusion('2026-10-20'), fluid: 'Dữ liệu thử' }];
+  data.forms.care.observations = [{ id: 'obs', time: '2026-10-20T08:00', values: { pulse: '80' } }];
+  await client.mutation(api.records.saveEditor, { workspaceKey, id: fixtureId,
+    input: { patient: data.patient, forms: data.forms }, templates: latest.templates, expectedRevision: latest.revision });
+  assert.deepEqual((await second.query(api.records.get, { workspaceKey, id: fixtureId })).forms, data.forms);
+  const invalid = structuredClone(data.forms);
+  invalid.care.observations[0].values.unsupported = 'Không hợp lệ';
+  const revision = (await second.query(api.workspaces.snapshot, { workspaceKey })).revision;
+  await assert.rejects(client.mutation(api.records.saveEditor, { workspaceKey, id: fixtureId,
+    input: { patient: data.patient, forms: invalid }, templates: latest.templates, expectedRevision: revision }));
+  assert.deepEqual((await second.query(api.records.get, { workspaceKey, id: fixtureId })).forms, data.forms);
   const template = await client.mutation(api.templates.create, {
     workspaceKey, template: { id: fixtureId, kind: 'orders', text: fixtureId, group: 'TEST' },
   });
   templateId = template.id;
   assert.ok((await second.query(api.workspaces.snapshot, { workspaceKey })).templates.some(item => item.id === templateId));
-  console.log('PASS: two clients share records/templates; stale saves rejected without overwriting data');
+  console.log('PASS: two clients share all three forms; stale revisions, old frontends and invalid care data reject without loss');
 } finally {
   if (templateId) await client.mutation(api.templates.remove, { workspaceKey, id: templateId });
   if (created) await client.mutation(api.records.remove, { workspaceKey, id: fixtureId });

@@ -2,28 +2,26 @@ import { dayjs } from '../../lib/date';
 
 export type Kind = 'progress' | 'orders';
 export type Template = { id: string; kind: Kind; text: string; group: string };
-export type Row = {
-  id: string;
-  time: string;
-  progress: string;
-  orders: string;
-  session?: 'morning' | 'afternoon';
-};
+export type { TreatmentRow as Row } from '../../forms/model';
+import { emptyCare, validForms, validTreatmentRows } from '../../forms/model';
+import type { Forms } from '../../forms/model';
+import type { TreatmentRow as Row } from '../../forms/model';
 export type Patient = {
   name: string; birth: string; gender: string; code: string; admission: string;
   department: string; room: string; bed: string; diagnosis: string; differential: string;
 };
-/** JSON backup format remains version 1, independently of the storage adapter. */
+export type PatientReview = { base: Patient; byDay: Record<string, Patient>; resolved: boolean };
 export type Data = {
-  version: 1;
+  version: 2;
   patient: Patient;
-  rows: Row[];
+  forms: Forms;
   templates: Template[];
-  dayPatients?: Record<string, Patient>;
+  patientReview?: PatientReview;
   status?: 'active' | 'completed';
   startedOn?: string;
   endedOn?: string | null;
 };
+export type LegacyData = Omit<Data, 'version' | 'forms' | 'patientReview'> & { version: 1; rows: Row[]; dayPatients?: Record<string, Patient> };
 
 export const localTime = () => dayjs().format('YYYY-MM-DDTHH:mm');
 export const makeRow = (): Row => ({ id: crypto.randomUUID(), time: localTime(), progress: '', orders: '' });
@@ -40,7 +38,7 @@ const initialTemplates: Template[] = [
 ].map(([kind, text, group], index) => ({ id: `seed-${index}`, kind: kind as Kind, text, group }));
 
 export const defaults = (): Data => ({
-  version: 1, patient: { ...blankPatient }, rows: [makeRow()], templates: structuredClone(initialTemplates),
+  version: 2, patient: { ...blankPatient }, forms: { treatment: { rows: [makeRow()] }, infusion: { rows: [] }, care: emptyCare() }, templates: structuredClone(initialTemplates),
 });
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -56,14 +54,35 @@ export function validTemplates(value: unknown): value is Template[] {
     && new Set(value.map(item => item.id)).size === value.length;
 }
 export function validData(value: unknown): value is Data {
-  return object(value) && value.version === 1 && validPatient(value.patient)
-    && (value.status === undefined || value.status === 'active' || value.status === 'completed')
+  return object(value) && value.version === 2 && validPatient(value.patient) && validForms(value.forms)
+    && validMetadata(value) && validTemplates(value.templates)
+    && (value.patientReview === undefined || (object(value.patientReview) && validPatient(value.patientReview.base)
+      && object(value.patientReview.byDay) && Object.values(value.patientReview.byDay).every(validPatient) && typeof value.patientReview.resolved === 'boolean'));
+}
+function validMetadata(value: Record<string, unknown>) {
+  return (value.status === undefined || value.status === 'active' || value.status === 'completed')
     && (value.startedOn === undefined || typeof value.startedOn === 'string')
-    && (value.endedOn === undefined || value.endedOn === null || typeof value.endedOn === 'string')
-    && (value.dayPatients === undefined || (object(value.dayPatients) && Object.values(value.dayPatients).every(validPatient)))
-    && Array.isArray(value.rows) && value.rows.length > 0
-    && value.rows.every(row => object(row)
-      && ['id', 'time', 'progress', 'orders'].every(key => typeof row[key] === 'string')
-      && (row.session === undefined || row.session === 'morning' || row.session === 'afternoon'))
-    && validTemplates(value.templates);
+    && (value.endedOn === undefined || value.endedOn === null || typeof value.endedOn === 'string');
+}
+/** Pure migration: original patient values are retained for review and backup. */
+export function parseData(value: unknown): Data {
+  if (validData(value)) return structuredClone(value);
+  if (!object(value) || value.version !== 1 || !validPatient(value.patient) || !validTreatmentRows(value.rows)
+    || !validMetadata(value) || !validTemplates(value.templates)
+    || (value.dayPatients !== undefined && (!object(value.dayPatients) || !Object.values(value.dayPatients).every(validPatient)))) {
+    throw new Error('Dữ liệu phiếu không hợp lệ');
+  }
+  const legacy = value as LegacyData;
+  const byDay = legacy.dayPatients ?? {};
+  const candidates = [legacy.patient, ...Object.values(byDay)].filter(p => Object.values(p).some(v => v.trim()));
+  const signature = (p: Patient) => JSON.stringify(Object.keys(blankPatient).map(k => p[k as keyof Patient]));
+  const different = new Map(candidates.map(p => [signature(p), p]));
+  const patient = different.size === 1 ? [...different.values()][0] : legacy.patient;
+  return structuredClone({
+    version: 2, patient, forms: { treatment: { rows: legacy.rows }, infusion: { rows: [] }, care: emptyCare() }, templates: legacy.templates,
+    ...(Object.keys(byDay).length ? { patientReview: { base: legacy.patient, byDay, resolved: different.size <= 1 } } : {}),
+    ...(legacy.status !== undefined ? { status: legacy.status } : {}),
+    ...(legacy.startedOn !== undefined ? { startedOn: legacy.startedOn } : {}),
+    ...(legacy.endedOn !== undefined ? { endedOn: legacy.endedOn } : {}),
+  });
 }

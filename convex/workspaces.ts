@@ -14,7 +14,7 @@ export const initialize = mutation({
   handler: async (ctx, { workspaceKey, records, templates }) => {
     workspaceKey = sharedKey(workspaceKey);
     if (await findWorkspace(ctx, workspaceKey)) return null;
-    if (records.some(item => !item.rows.length)
+    if (records.some(item => !(item.forms?.treatment.rows ?? item.rows)?.length)
       || new Set(records.map(item => item.id)).size !== records.length
       || new Set(templates.map(item => item.id)).size !== templates.length) {
       throw new ConvexError('Dữ liệu chuyển lên không hợp lệ');

@@ -3,7 +3,7 @@ import { mutation, query } from './_generated/server';
 import { requireRecord, requireWorkspace, sharedKey, bumpRevision, checkRevision } from './access';
 import { record, recordFields, recordPatch, template } from './validators';
 import { summarizeRecord } from '../src/services/treatment-records/episodes';
-import { recordInput } from '../src/services/treatment-records/contracts';
+import { recordInput, readRecord } from '../src/services/treatment-records/contracts';
 
 const args = { workspaceKey: v.string(), id: v.string() };
 
@@ -14,7 +14,7 @@ export const list = query({
     await requireWorkspace(ctx, workspaceKey);
     const records = await ctx.db.query('treatmentRecords')
       .withIndex('by_workspace', q => q.eq('workspaceKey', workspaceKey)).collect();
-    return records.map(summarizeRecord);
+    return records.map(item => summarizeRecord(readRecord(item)));
   },
 });
 export const get = query({
@@ -22,7 +22,8 @@ export const get = query({
   handler: async (ctx, { workspaceKey, id }) => {
     workspaceKey = sharedKey(workspaceKey);
     const item = await requireRecord(ctx, workspaceKey, id);
-    return { id: item.id, ...recordInput(item) };
+    const { _id, _creationTime, workspaceKey: _workspace, ...raw } = item;
+    return raw;
   },
 });
 export const create = mutation({
@@ -30,7 +31,8 @@ export const create = mutation({
   handler: async (ctx, { workspaceKey, record: item, expectedRevision }) => {
     workspaceKey = sharedKey(workspaceKey);
     await requireWorkspace(ctx, workspaceKey);
-    if (!item.rows.length) throw new ConvexError('Phiếu phải có ít nhất một dòng');
+    readRecord(item);
+    if (!(item.forms?.treatment.rows ?? item.rows)?.length) throw new ConvexError('Phiếu phải có ít nhất một dòng');
     const existing = await ctx.db.query('treatmentRecords')
       .withIndex('by_workspace_id', q => q.eq('workspaceKey', workspaceKey).eq('id', item.id)).unique();
     if (existing) throw new ConvexError('Mã phiếu đã tồn tại');
@@ -44,7 +46,9 @@ export const update = mutation({
   handler: async (ctx, { workspaceKey, id, input }) => {
     workspaceKey = sharedKey(workspaceKey);
     const item = await requireRecord(ctx, workspaceKey, id);
-    if (input.rows && !input.rows.length) throw new ConvexError('Phiếu phải có ít nhất một dòng');
+    readRecord({ ...item, ...input });
+    if ((input.rows && !input.rows.length) || (input.forms && !input.forms.treatment.rows.length)) throw new ConvexError('Phiếu phải có ít nhất một dòng');
+    if (item.forms && (input.rows || input.dayPatients)) throw new ConvexError('Ứng dụng đã được cập nhật. Hãy tải lại trang trước khi sửa.');
     await ctx.db.patch(item._id, input);
     return await bumpRevision(ctx, workspaceKey);
   },
@@ -65,12 +69,15 @@ export const saveEditor = mutation({
   handler: async (ctx, { workspaceKey, id, input, templates, expectedRevision }) => {
     workspaceKey = sharedKey(workspaceKey);
     const item = await requireRecord(ctx, workspaceKey, id);
-    if (!input.rows.length || new Set(templates.map(value => value.id)).size !== templates.length) {
+    if (!(input.forms?.treatment.rows ?? input.rows)?.length || new Set(templates.map(value => value.id)).size !== templates.length) {
       throw new ConvexError('Phiếu hoặc thư viện mẫu không hợp lệ');
     }
     await checkRevision(ctx, workspaceKey, expectedRevision);
+    if (item.forms && !input.forms) throw new ConvexError('Ứng dụng đã được cập nhật. Hãy tải lại trang trước khi lưu.');
+    // Canonical conversion retains old patient snapshots inside patientReview.
+    const canonical = recordInput(readRecord({ id, ...input, ...(!item.forms && input.forms && !input.patientReview ? { patientReview: readRecord(item).patientReview } : {}) }));
     await ctx.db.replace(item._id, {
-      workspaceKey, id, status: item.status, startedOn: item.startedOn, endedOn: item.endedOn, ...input,
+      workspaceKey, id, status: item.status, startedOn: item.startedOn, endedOn: item.endedOn, ...canonical,
     });
     const current = await ctx.db.query('templates')
       .withIndex('by_workspace', q => q.eq('workspaceKey', workspaceKey)).collect();

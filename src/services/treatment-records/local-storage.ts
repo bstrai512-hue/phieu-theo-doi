@@ -1,16 +1,17 @@
-import { recordInput } from './contracts';
+import { createLocalCareDefaults } from './care-defaults-local';
 import type { TreatmentRecord, TreatmentRecordInput, TreatmentServices } from './contracts';
-import { defaults, validData, validTemplates } from './model';
+import { defaults, parseData, validData, validTemplates } from './model';
 import type { Template } from './model';
+import { recordInput, readRecord } from './contracts';
 import { summarizeRecord } from './episodes';
 
 const KEY = 'treatment-services-v1';
 const LEGACY_KEY = 'treatment-quick-entry-v1';
-type Store = { version: 1; records: TreatmentRecord[]; templates: Template[] };
+type Store = { version: 1 | 2; records: TreatmentRecord[]; templates: Template[] };
 type StorageAccess = () => Pick<Storage, 'getItem' | 'setItem'>;
 
 function validRecord(value: TreatmentRecordInput): boolean {
-  return validData({ version: 1, ...value, templates: [] });
+  return validData({ version: 2, ...value, templates: [] });
 }
 
 /** Reads legacy data without deleting it. A failed write never changes stored data. */
@@ -21,22 +22,18 @@ export function createLocalTreatmentServices(storage: StorageAccess): TreatmentS
     const raw = storage().getItem(KEY);
     if (raw !== null) {
       const value = JSON.parse(raw) as Store;
-      if (!value || value.version !== 1 || !Array.isArray(value.records)
-        || !value.records.every(record => record && typeof record.id === 'string' && validRecord(record))
-        || !validTemplates(value.templates)
-        || new Set(value.records.map(record => record.id)).size !== value.records.length
-        || new Set(value.templates.map(template => template.id)).size !== value.templates.length) {
-        throw new Error('Dữ liệu lưu trên thiết bị không hợp lệ');
-      }
-      return value;
+      if (!value || ![1, 2].includes(value.version) || !Array.isArray(value.records)
+        || !validTemplates(value.templates) || new Set(value.templates.map(t => t.id)).size !== value.templates.length) throw new Error('Dữ liệu lưu trên thiết bị không hợp lệ');
+      const records = value.records.map(readRecord);
+      if (new Set(records.map(r => r.id)).size !== records.length) throw new Error('Mã đợt bị trùng');
+      return { version: 2, records, templates: value.templates };
     }
     if (!initial) {
       const legacy = storage().getItem(LEGACY_KEY);
-      const data: unknown = legacy === null ? defaults() : JSON.parse(legacy);
-      if (!validData(data)) throw new Error('Dữ liệu cũ không hợp lệ; chưa thay đổi dữ liệu đã lưu');
+      const data = legacy === null ? defaults() : parseData(JSON.parse(legacy));
       initial = {
-        version: 1,
-        records: [{ id: 'current', patient: data.patient, rows: data.rows, dayPatients: data.dayPatients }],
+        version: 2,
+        records: [{ id: 'current', ...recordInput(data) }],
         templates: data.templates,
       };
     }
@@ -44,7 +41,9 @@ export function createLocalTreatmentServices(storage: StorageAccess): TreatmentS
   }
 
   function write(value: Store) {
-    storage().setItem(KEY, JSON.stringify(value));
+    const previous = storage().getItem(KEY);
+    if (previous && !storage().getItem('treatment-services-before-v2')) storage().setItem('treatment-services-before-v2', previous);
+    storage().setItem(KEY, JSON.stringify({ ...value, version: 2 }));
   }
 
   function recordIndex(store: Store, id: string) {
@@ -66,6 +65,7 @@ export function createLocalTreatmentServices(storage: StorageAccess): TreatmentS
 
   return {
     storage: 'local',
+    careDefaults: createLocalCareDefaults(storage),
     records: {
       async list() {
         return read().records.map(summarizeRecord);

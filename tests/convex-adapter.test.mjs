@@ -70,8 +70,8 @@ test('failed migration rejects rather than silently saving locally, then can ret
 
 test('CRUD routes through Convex with a shared workspace scope and immutable IDs', async () => {
   const { services, calls } = setup({ exists: true });
-  const { patient, rows } = defaults();
-  const record = await services.records.create({ patient, rows });
+  const { patient, forms } = defaults();
+  const record = await services.records.create({ patient, forms });
   await services.records.get(record.id);
   await services.records.update(record.id, { patient: { ...patient, name: 'Mới' } });
   await services.records.remove(record.id);
