@@ -1,9 +1,10 @@
 import { hasFormContent } from '../../forms/model';
 import type { SetStateAction } from 'react';
-import type { TreatmentRecord, TreatmentRecordInput, TreatmentRecordSummary, TreatmentServices, TreatmentSnapshot } from './contracts';
+import type { TreatmentRecord, TreatmentRecordInput, TreatmentRecordSummary, TreatmentSnapshot, Data } from '../../types';
+import type { TreatmentServices } from './contracts';
 import { recordInput } from './contracts';
 import { defaults, localTime } from './model';
-import type { Data } from './model';
+
 import { persistEditorData, persistTemplates } from './editor-data';
 import { summarizeRecord } from './episodes';
 
@@ -18,7 +19,7 @@ const recordJson = (data: TreatmentRecordInput) => stableJson(recordInput(data))
 const libraryJson = (templates: Data['templates']) => stableJson([...templates].sort((a,b) => a.id.localeCompare(b.id)));
 
 /** Draft creation, ordered writes and realtime updates share the same save seam. */
-export function createTreatmentWorkspace(services: TreatmentServices) {
+export function createTreatmentWorkspace(services: TreatmentServices, defaultDepartment = () => '') {
   let state: WorkspaceState = {
     data: null, records: [], recordId: null, viewKey: 'loading', saved: true, storageError: false,
     loadError: '', actionError: '', busy: false, conflict: false, storage: services.storage ?? 'local',
@@ -51,6 +52,7 @@ export function createTreatmentWorkspace(services: TreatmentServices) {
   function blank(templates: Data['templates']) {
     revision++;
     const data: Data = { ...defaults(), templates, status: 'active', startedOn: localTime().slice(0, 10) };
+    data.patient.department = defaultDepartment();
     baseline(data);
     publish({ recordId: null, viewKey: `draft-${crypto.randomUUID()}`, data, saved: true, storageError: false, actionError: '', conflict: false });
   }
@@ -223,6 +225,7 @@ export function createTreatmentWorkspace(services: TreatmentServices) {
   return {
     getSnapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    prepareToLeave: () => perform(async () => {}, 'Chưa lưu được bản đang sửa. Hãy thử lại trước khi đổi Khoa.'),
     load, start, setData, flush, selectRecord, newDraft, deleteRecord, changeStatus, resolveConflict,
     dispose() { generation++; clearTimeout(timer); unsubscribe?.(); unsubscribe = undefined; },
   };

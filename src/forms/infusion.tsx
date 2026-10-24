@@ -5,10 +5,10 @@ import type { Dispatch, SetStateAction } from "react";
 import { Plus, Droplets } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import type { Patient } from "../services/treatment-records/model";
+import type { Patient, Forms, InfusionKey } from '../types';
 import { localTime } from "../services/treatment-records/model";
 import { infusionFields, makeInfusion } from "./model";
-import type { Forms, InfusionKey } from "./model";
+
 import { PrintPreview, RemoveEntry } from "./shared";
 import { printInfusion } from "./print";
 export function InfusionForm({

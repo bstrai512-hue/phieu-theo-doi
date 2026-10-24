@@ -1,24 +1,5 @@
-import type { CareDefaults, CareDefaultsSnapshot } from '../../forms/care-defaults-model';
 import { parseData } from './model';
-import type { Data, Patient, PatientReview, Template } from './model';
-import type { Forms } from '../../forms/model';
-
-export type TreatmentRecordInput = {
-  patient: Patient;
-  forms: Forms;
-  patientReview?: PatientReview;
-  status?: 'active' | 'completed';
-  startedOn?: string;
-  endedOn?: string | null;
-};
-export type TreatmentRecord = TreatmentRecordInput & { id: string; workspaceRevision?: number };
-export type TreatmentSnapshot = { revision: number; records: TreatmentRecord[]; templates: Template[] };
-export type TreatmentRecordSummary = {
-  id: string; patientName: string; patientCode: string; admission: string;
-  startedOn: string; status: 'active' | 'completed';
-};
-// An optional caller ID preserves IDs when importing an existing JSON backup.
-export type TemplateInput = Omit<Template, 'id'> & { id?: string };
+import type { CareTemplateLibrary, CareDefaultsSnapshot, Data, Template, TemplateInput, TreatmentRecord, TreatmentRecordInput, TreatmentRecordSummary, TreatmentSnapshot } from '../../types';
 
 /** IDs are opaque. Missing IDs and invalid input reject with Error. */
 export interface TreatmentRecords {
@@ -38,7 +19,7 @@ export interface Templates {
 
 export interface CareDefaultsStore {
   get(): Promise<CareDefaultsSnapshot>;
-  update(value: CareDefaults, expectedRevision: number): Promise<CareDefaultsSnapshot>;
+  update(value: CareTemplateLibrary, expectedRevision: number): Promise<CareDefaultsSnapshot>;
   watch?(onChange:(value:CareDefaultsSnapshot)=>void,onError:()=>void):()=>void;
 }
 

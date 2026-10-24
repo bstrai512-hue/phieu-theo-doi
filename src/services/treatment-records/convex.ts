@@ -12,11 +12,12 @@ export function createConvexTreatmentServices(
   getWorkspaceKey: () => string,
   local: TreatmentServices,
 ): TreatmentServices {
+  const workspaceKey = getWorkspaceKey();
   let initialization: Promise<string> | undefined;
 
   async function initialize(): Promise<string> {
-    const workspaceKey = getWorkspaceKey();
     if (await client.query(api.workspaces.exists, { workspaceKey })) return workspaceKey;
+    if (workspaceKey !== 'shared') throw new Error('Không tìm thấy Khoa. Hãy chọn lại Khoa.');
     const [summaries, templates] = await Promise.all([local.records.list(), local.templates.list()]);
     const records = await Promise.all(summaries.map(summary => local.records.get(summary.id)));
     await client.mutation(api.workspaces.initialize, { workspaceKey, records, templates });

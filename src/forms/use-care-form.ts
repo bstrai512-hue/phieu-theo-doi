@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { CareData } from "./model";
+import type { CareData } from '../types';
 import { careEditorValues, updateCareField } from "./care-form-state";
 import { useSynchronizedForm } from "./use-synchronized-form";
 

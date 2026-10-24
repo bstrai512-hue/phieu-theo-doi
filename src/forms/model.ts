@@ -1,11 +1,6 @@
-export type FormKind = "treatment" | "infusion" | "care";
-export type TreatmentRow = {
-  id: string;
-  time: string;
-  progress: string;
-  orders: string;
-  session?: "morning" | "afternoon";
-};
+import { ordersText, validOrders } from '../lib/treatment-orders';
+import type { FormKind, TreatmentRow, InfusionRow, InfusionKey, CareKey, CareObservation, CareData, Forms } from '../types';
+
 export const infusionFields = [
   ["date", "Ngày truyền", "date"],
   ["fluid", "Tên dịch truyền / hàm lượng", "text"],
@@ -16,11 +11,7 @@ export const infusionFields = [
   ["end", "Kết thúc", "datetime-local"],
   ["doctor", "Bác sĩ chỉ định", "text"],
   ["nurse", "Điều dưỡng thực hiện", "text"],
-] as const;
-export type InfusionKey = (typeof infusionFields)[number][0];
-export type InfusionRow = {
-  id: string;
-} & Record<InfusionKey, string>;
+] as const satisfies readonly (readonly [InfusionKey, string, string])[];
 export const careGroups = [
   { title: "Phân cấp chăm sóc", fields: [["level", "Phân cấp chăm sóc"]] },
   {
@@ -119,38 +110,7 @@ export const careGroups = [
       ["receivedBy", "Tên ĐD/NHS tiếp nhận"],
     ],
   },
-] as const;
-export type CareKey = (typeof careGroups)[number]["fields"][number][0];
-export type CareObservation = {
-  id: string;
-  time: string;
-  values: Partial<Record<CareKey, string>>;
-};
-export type CareGoal = {
-  id: string;
-  text: string;
-  achieved: boolean;
-};
-export type CareDiagnosis = {
-  id: string;
-  text: string;
-  goals: CareGoal[];
-};
-export type CareData = {
-  allergyStatus: "" | "unknown" | "known";
-  allergy: string;
-  observations: CareObservation[];
-  diagnoses: CareDiagnosis[];
-};
-export type Forms = {
-  treatment: {
-    rows: TreatmentRow[];
-  };
-  infusion: {
-    rows: InfusionRow[];
-  };
-  care: CareData;
-};
+] as const satisfies readonly { readonly title: string; readonly fields: readonly (readonly [CareKey, string])[] }[];
 export const formLabels: Record<FormKind, string> = {
   treatment: "Theo dõi điều trị",
   infusion: "Theo dõi truyền dịch",
@@ -188,9 +148,10 @@ export function validTreatmentRows(rows: unknown): rows is TreatmentRow[] {
     rows.every(
       (r) =>
         obj(r) &&
-        ["id", "time", "progress", "orders"].every(
+        ["id", "time", "progress"].every(
           (k) => typeof r[k] === "string",
         ) &&
+        validOrders(r.orders) &&
         (r.session === undefined ||
           r.session === "morning" ||
           r.session === "afternoon"),
@@ -255,7 +216,7 @@ export function validForms(forms: unknown): forms is Forms {
 }
 export function hasFormContent(forms: Forms): boolean {
   return (
-    forms.treatment.rows.some((r) => r.progress.trim() || r.orders.trim()) ||
+    forms.treatment.rows.some((r) => r.progress.trim() || ordersText(r.orders).trim()) ||
     forms.infusion.rows.some((r) =>
       infusionFields.some(([k]) => k !== "date" && r[k].trim()),
     ) ||

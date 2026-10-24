@@ -1,14 +1,14 @@
 import { CareObservationFields } from "./care-observation-fields";
-import { makeCareObservation } from "./care-defaults-model";
-import type { CareDefaults } from "./care-defaults-model";
+import { nextCareObservation } from "./care-defaults-model";
+import type { CareTemplateLibrary, Patient, CareData, CareDiagnosis } from '../types';
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Plus, ClipboardList } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { localTime } from "../services/treatment-records/model";
-import type { Patient } from "../services/treatment-records/model";
+
 import { careGroups } from "./model";
-import type { CareData, CareDiagnosis } from "./model";
+
 import { careValueIssue } from "./care-conventions";
 import {
   CareAllergyControl,
@@ -34,12 +34,14 @@ export function CareForm({
   onChange: Dispatch<SetStateAction<CareData>>;
   patient: Patient;
   canPrint: boolean;
-  defaults: CareDefaults | null;
+  defaults: CareTemplateLibrary | null;
   defaultsError: string;
   reloadDefaults: () => void;
 }) {
   const editor = useCareForm(data, onChange);
   const [selected, setSelected] = useState("");
+  const [templateChoice, setTemplateChoice] = useState<string | null>(null);
+  const templateId = templateChoice ?? defaults?.defaultTemplateId ?? "";
   const selectedIndex = data.observations.findIndex(
     (observation) => observation.id === selected,
   );
@@ -55,8 +57,9 @@ export function CareForm({
     ),
   );
   const addObservation = () => {
-    if (!defaults) return;
-    const observation = makeCareObservation(defaults, localTime());
+    const previous = editor.form.getValues("observations");
+    if (!previous.length && !defaults) return;
+    const observation = nextCareObservation(previous, defaults ?? {templates:[], defaultTemplateId:null}, templateId, localTime());
     editor.change("observations", [
       ...editor.form.getValues("observations"),
       observation,
@@ -101,20 +104,27 @@ export function CareForm({
         <div className="care-issues" role="alert">
           {defaultsError}
           <Button variant="outline" size="sm" onClick={reloadDefaults}>
-            Tải lại cấu hình
+            Tải lại thư viện
           </Button>
         </div>
       )}
       {!defaults && !defaultsError && (
         <p role="status" className="form-help">
-          Đang tải giá trị mặc định…
+          Đang tải thư viện mẫu…
         </p>
       )}
+      {data.observations.length > 0 && <p className="form-help">Mốc mới sẽ sao chép giá trị từ mốc cuối cùng trong phiếu, với ngày giờ mới.</p>}
       <div className="care-layout">
         <div className="clinical-form">
           <div className="form-section-bar">
             <h3>Nhận định và can thiệp</h3>
-            <Button onClick={addObservation} disabled={!defaults}>
+            {!data.observations.length && defaults && <label>Mẫu cho mốc đầu tiên
+              <select aria-label="Mẫu cho mốc đầu tiên" value={defaults.templates.some(t => t.id === templateId) ? templateId : ""} onChange={e => setTemplateChoice(e.target.value)}>
+                <option value="">Để trống</option>
+                {defaults.templates.map(t => <option key={t.id} value={t.id}>{t.name}{t.id === defaults.defaultTemplateId ? " · Mặc định" : ""}</option>)}
+              </select>
+            </label>}
+            <Button onClick={addObservation} disabled={!defaults && !data.observations.length}>
               <Plus />
               Thêm mốc theo dõi
             </Button>

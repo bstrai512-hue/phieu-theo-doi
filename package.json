@@ -6,7 +6,7 @@
   "packageManager": "pnpm@11.25.0",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
+    "build": "vite build && tsc -b",
     "test": "node --import ./tests/register-typescript.mjs --test tests/*.test.mjs",
     "test:convex": "node --import ./tests/register-typescript.mjs tests/convex-live.mjs",
     "preview": "vite preview --host 127.0.0.1",
@@ -14,9 +14,11 @@
     "convex:deploy": "convex deploy"
   },
   "dependencies": {
+    "@base-ui/react": "^1.9.0",
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-popover": "^1.1.6",
     "@radix-ui/react-slot": "^1.1.2",
+    "@tanstack/react-router": "^1.170.45",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -24,6 +26,7 @@
     "date-fns": "^4.4.0",
     "dayjs": "^1.11.23",
     "lucide-react": "^0.468.0",
+    "radix-ui": "^1.8.1",
     "react": "^19.2.0",
     "react-day-picker": "^10.0.2",
     "react-dom": "^19.2.0",
@@ -32,9 +35,11 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
+    "@tanstack/router-plugin": "^1.168.47",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.1.0",
+    "code-inspector-plugin": "^2.0.9",
     "tailwindcss": "^4.1.0",
     "typescript": "~5.9.3",
     "vite": "^7.2.2"

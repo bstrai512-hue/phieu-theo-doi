@@ -1,4 +1,4 @@
-import type { CareKey } from "./model";
+import type { CareKey } from '../types';
 
 export type CareOption = { code: string; label: string };
 type Choice = {

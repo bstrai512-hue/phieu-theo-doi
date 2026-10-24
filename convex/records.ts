@@ -1,6 +1,6 @@
 import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
-import { requireRecord, requireWorkspace, sharedKey, bumpRevision, checkRevision } from './access';
+import { requireRecord, requireWorkspace, checkedWorkspaceKey, bumpRevision, checkRevision } from './access';
 import { record, recordFields, recordPatch, template } from './validators';
 import { summarizeRecord } from '../src/services/treatment-records/episodes';
 import { recordInput, readRecord } from '../src/services/treatment-records/contracts';
@@ -10,7 +10,7 @@ const args = { workspaceKey: v.string(), id: v.string() };
 export const list = query({
   args: { workspaceKey: v.string() },
   handler: async (ctx, { workspaceKey }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     await requireWorkspace(ctx, workspaceKey);
     const records = await ctx.db.query('treatmentRecords')
       .withIndex('by_workspace', q => q.eq('workspaceKey', workspaceKey)).collect();
@@ -20,7 +20,7 @@ export const list = query({
 export const get = query({
   args,
   handler: async (ctx, { workspaceKey, id }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     const item = await requireRecord(ctx, workspaceKey, id);
     const { _id, _creationTime, workspaceKey: _workspace, ...raw } = item;
     return raw;
@@ -29,7 +29,7 @@ export const get = query({
 export const create = mutation({
   args: { workspaceKey: v.string(), record, expectedRevision: v.optional(v.number()) },
   handler: async (ctx, { workspaceKey, record: item, expectedRevision }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     await requireWorkspace(ctx, workspaceKey);
     readRecord(item);
     if (!(item.forms?.treatment.rows ?? item.rows)?.length) throw new ConvexError('Phiếu phải có ít nhất một dòng');
@@ -44,7 +44,7 @@ export const create = mutation({
 export const update = mutation({
   args: { ...args, input: recordPatch },
   handler: async (ctx, { workspaceKey, id, input }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     const item = await requireRecord(ctx, workspaceKey, id);
     readRecord({ ...item, ...input });
     if ((input.rows && !input.rows.length) || (input.forms && !input.forms.treatment.rows.length)) throw new ConvexError('Phiếu phải có ít nhất một dòng');
@@ -56,7 +56,7 @@ export const update = mutation({
 export const remove = mutation({
   args,
   handler: async (ctx, { workspaceKey, id }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     const item = await requireRecord(ctx, workspaceKey, id);
     await ctx.db.delete(item._id);
     return await bumpRevision(ctx, workspaceKey);
@@ -67,7 +67,7 @@ export const remove = mutation({
 export const saveEditor = mutation({
   args: { ...args, input: v.object(recordFields), templates: v.array(template), expectedRevision: v.optional(v.number()) },
   handler: async (ctx, { workspaceKey, id, input, templates, expectedRevision }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     const item = await requireRecord(ctx, workspaceKey, id);
     if (!(input.forms?.treatment.rows ?? input.rows)?.length || new Set(templates.map(value => value.id)).size !== templates.length) {
       throw new ConvexError('Phiếu hoặc thư viện mẫu không hợp lệ');

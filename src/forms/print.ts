@@ -1,7 +1,7 @@
 import { careConventions, formatCareValue } from "./care-conventions";
-import type { Patient } from "../services/treatment-records/model";
+import type { Patient, CareData, Forms } from '../types';
 import { careGroups } from "./model";
-import type { CareData, Forms } from "./model";
+
 export const escapeHtml = (text: string) =>
   text.replace(
     /[&<>"']/g,

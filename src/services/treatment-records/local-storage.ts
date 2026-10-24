@@ -1,7 +1,8 @@
 import { createLocalCareDefaults } from './care-defaults-local';
-import type { TreatmentRecord, TreatmentRecordInput, TreatmentServices } from './contracts';
+import type { TreatmentRecord, TreatmentRecordInput, Template } from '../../types';
+import type { TreatmentServices } from './contracts';
 import { defaults, parseData, validData, validTemplates } from './model';
-import type { Template } from './model';
+
 import { recordInput, readRecord } from './contracts';
 import { summarizeRecord } from './episodes';
 
@@ -15,11 +16,12 @@ function validRecord(value: TreatmentRecordInput): boolean {
 }
 
 /** Reads legacy data without deleting it. A failed write never changes stored data. */
-export function createLocalTreatmentServices(storage: StorageAccess): TreatmentServices {
+export function createLocalTreatmentServices(storage: StorageAccess, workspaceKey = 'shared'): TreatmentServices {
+  const key = workspaceKey === 'shared' ? KEY : `${KEY}:${workspaceKey}`;
   let initial: Store | undefined;
 
   function read(): Store {
-    const raw = storage().getItem(KEY);
+    const raw = storage().getItem(key);
     if (raw !== null) {
       const value = JSON.parse(raw) as Store;
       if (!value || ![1, 2].includes(value.version) || !Array.isArray(value.records)
@@ -29,21 +31,21 @@ export function createLocalTreatmentServices(storage: StorageAccess): TreatmentS
       return { version: 2, records, templates: value.templates };
     }
     if (!initial) {
-      const legacy = storage().getItem(LEGACY_KEY);
+      const legacy = workspaceKey === 'shared' ? storage().getItem(LEGACY_KEY) : null;
       const data = legacy === null ? defaults() : parseData(JSON.parse(legacy));
       initial = {
         version: 2,
-        records: [{ id: 'current', ...recordInput(data) }],
-        templates: data.templates,
+        records: workspaceKey === 'shared' ? [{ id: 'current', ...recordInput(data) }] : [],
+        templates: workspaceKey === 'shared' ? data.templates : [],
       };
     }
     return structuredClone(initial);
   }
 
   function write(value: Store) {
-    const previous = storage().getItem(KEY);
-    if (previous && !storage().getItem('treatment-services-before-v2')) storage().setItem('treatment-services-before-v2', previous);
-    storage().setItem(KEY, JSON.stringify({ ...value, version: 2 }));
+    const previous = storage().getItem(key);
+    if (workspaceKey === 'shared' && previous && !storage().getItem('treatment-services-before-v2')) storage().setItem('treatment-services-before-v2', previous);
+    storage().setItem(key, JSON.stringify({ ...value, version: 2 }));
   }
 
   function recordIndex(store: Store, id: string) {
@@ -65,7 +67,7 @@ export function createLocalTreatmentServices(storage: StorageAccess): TreatmentS
 
   return {
     storage: 'local',
-    careDefaults: createLocalCareDefaults(storage),
+    careDefaults: createLocalCareDefaults(storage, workspaceKey),
     records: {
       async list() {
         return read().records.map(summarizeRecord);

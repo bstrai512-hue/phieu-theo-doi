@@ -1,15 +1,18 @@
+import type { WorkspaceSettings } from '../types/workspace';
 import type { Dispatch, SetStateAction } from "react";
 import { useController } from "react-hook-form";
 import { FolderHeart } from "lucide-react";
 import { Input } from "../components/ui/input";
-import type { Patient } from "../services/treatment-records/model";
+import type { Patient } from '../types';
 import { useSynchronizedForm } from "./use-synchronized-form";
 
 export function PatientForm({
+  settings,
   data,
   onChange,
   disabled,
 }: {
+  settings: WorkspaceSettings;
   data: Patient;
   onChange: Dispatch<SetStateAction<Patient>>;
   disabled: boolean;
@@ -80,6 +83,7 @@ export function PatientForm({
           editor={editor}
           name="room"
           label="Phòng"
+          options={settings.rooms.length ? [["", "Chọn phòng"], ...(data.room && !settings.rooms.includes(data.room) ? [[data.room, `${data.room} (đã lưu)`] as [string,string]] : []), ...settings.rooms.map(value => [value,value] as [string,string])] : undefined}
           placeholder="Nhập phòng"
           disabled={disabled}
         />
@@ -88,19 +92,8 @@ export function PatientForm({
           name="bed"
           label="Giường"
           disabled={disabled}
-          options={[
-            ["", "Chọn giường"],
-            ...(data.bed &&
-            !Array.from({ length: 55 }, (_, i) => String(i + 1)).includes(
-              data.bed,
-            )
-              ? [[data.bed, `${data.bed} (đã lưu)`] as [string, string]]
-              : []),
-            ...Array.from(
-              { length: 55 },
-              (_, i) => [String(i + 1), `Giường ${i + 1}`] as [string, string],
-            ),
-          ]}
+          placeholder="Nhập giường"
+          options={settings.beds.length ? [["", "Chọn giường"], ...(data.bed && !settings.beds.includes(data.bed) ? [[data.bed, `${data.bed} (đã lưu)`] as [string,string]] : []), ...settings.beds.map(value => [value,value] as [string,string])] : undefined}
         />
       </div>
       <div className="diagnosis-grid">

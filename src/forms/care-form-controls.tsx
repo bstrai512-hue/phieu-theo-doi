@@ -9,7 +9,7 @@ import type {
 import { Input } from "../components/ui/input";
 import { CareField } from "./care-field";
 import { careValueIssue } from "./care-conventions";
-import type { CareData, CareKey } from "./model";
+import type { CareData, CareKey } from '../types';
 import type { CareEditor } from "./use-care-form";
 
 export function CareValueControl({

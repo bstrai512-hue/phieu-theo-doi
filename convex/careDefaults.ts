@@ -1,14 +1,16 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireWorkspace, sharedKey } from "./access";
+import { requireWorkspace, checkedWorkspaceKey } from "./access";
 import {
-  validCareDefaults,
-  cleanCareDefaults,
+  validCareTemplateLibrary,
+  migrateCareTemplateLibrary,
+  emptyCareTemplateLibrary,
+  cleanCareTemplateLibrary,
 } from "../src/forms/care-defaults-model";
 export const get = query({
   args: { workspaceKey: v.string() },
   handler: async (ctx, { workspaceKey }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     await requireWorkspace(ctx, workspaceKey);
     const current = await ctx.db
       .query("careDefaults")
@@ -16,7 +18,7 @@ export const get = query({
       .unique();
     return {
       revision: current?.revision ?? 0,
-      value: { values: current?.values ?? {} },
+      value: current ? migrateCareTemplateLibrary(current.templates ? {templates:current.templates, defaultTemplateId:current.defaultTemplateId ?? null} : {values:current.values ?? {}}) : emptyCareTemplateLibrary(),
     };
   },
 });
@@ -24,12 +26,12 @@ export const update = mutation({
   args: {
     workspaceKey: v.string(),
     expectedRevision: v.number(),
-    value: v.object({ values: v.record(v.string(), v.string()) }),
+    value: v.object({ templates: v.array(v.object({id:v.string(), name:v.string(), values:v.record(v.string(),v.string())})), defaultTemplateId:v.union(v.string(),v.null()) }),
   },
   handler: async (ctx, { workspaceKey, expectedRevision, value }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     await requireWorkspace(ctx, workspaceKey);
-    if (!validCareDefaults(value))
+    if (!validCareTemplateLibrary(value))
       throw new ConvexError("Giá trị mặc định chưa hợp lệ");
     const current = await ctx.db
       .query("careDefaults")
@@ -42,10 +44,10 @@ export const update = mutation({
     const next = {
       workspaceKey,
       revision: (current?.revision ?? 0) + 1,
-      values: cleanCareDefaults(value).values,
+      ...cleanCareTemplateLibrary(value),
     };
     if (current) await ctx.db.replace(current._id, next);
     else await ctx.db.insert("careDefaults", next);
-    return { revision: next.revision, value: { values: next.values } };
+    return { revision: next.revision, value: cleanCareTemplateLibrary(value) };
   },
 });

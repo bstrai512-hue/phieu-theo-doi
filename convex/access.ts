@@ -3,14 +3,14 @@ import type { QueryCtx } from './_generated/server';
 import type { MutationCtx } from './_generated/server';
 
 export const SHARED_WORKSPACE = 'shared';
-export function sharedKey(key: string) { checkKey(key); return SHARED_WORKSPACE; }
+export function checkedWorkspaceKey(key: string) { checkKey(key); return key; }
 
 export function checkKey(key: string) {
   if (key !== SHARED_WORKSPACE && !/^[a-f0-9]{64}$/.test(key)) throw new ConvexError('Workspace không hợp lệ');
 }
 
 export async function findWorkspace(ctx: QueryCtx, key: string) {
-  return ctx.db.query('workspaces').withIndex('by_key', q => q.eq('key', sharedKey(key))).unique();
+  return ctx.db.query('workspaces').withIndex('by_key', q => q.eq('key', checkedWorkspaceKey(key))).unique();
 }
 
 export async function requireWorkspace(ctx: QueryCtx, key: string) {
@@ -18,7 +18,7 @@ export async function requireWorkspace(ctx: QueryCtx, key: string) {
 }
 
 export async function requireRecord(ctx: QueryCtx, workspaceKey: string, id: string) {
-  workspaceKey = sharedKey(workspaceKey);
+  workspaceKey = checkedWorkspaceKey(workspaceKey);
   await requireWorkspace(ctx, workspaceKey);
   const record = await ctx.db.query('treatmentRecords')
     .withIndex('by_workspace_id', q => q.eq('workspaceKey', workspaceKey).eq('id', id)).unique();
@@ -27,7 +27,7 @@ export async function requireRecord(ctx: QueryCtx, workspaceKey: string, id: str
 }
 
 export async function requireTemplate(ctx: QueryCtx, workspaceKey: string, id: string) {
-  workspaceKey = sharedKey(workspaceKey);
+  workspaceKey = checkedWorkspaceKey(workspaceKey);
   await requireWorkspace(ctx, workspaceKey);
   const template = await ctx.db.query('templates')
     .withIndex('by_workspace_id', q => q.eq('workspaceKey', workspaceKey).eq('id', id)).unique();

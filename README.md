@@ -19,6 +19,39 @@ pnpm test
 pnpm preview
 ```
 
+## Điều hướng
+
+TanStack Router dùng file-based routing như `home-medical-center/apps/admin`.
+Vite plugin đọc `src/routes/` và tự sinh `src/routeTree.gen.ts` khi chạy dev/build;
+không sửa file sinh tự động. `src/router.ts` khởi tạo router với browser history:
+
+- `/`: phiếu điều trị.
+- `/care-defaults`: thiết lập mặc định phiếu chăm sóc.
+- Đường dẫn không tồn tại chuyển về `/`.
+
+```text
+src/routes/
+  __root.tsx         # Layout workspace dùng chung
+  index.tsx          # /
+  care-defaults.tsx # /care-defaults
+  $.tsx             # Đường dẫn không tồn tại
+```
+
+`src/main.tsx` gắn `RouterProvider` bên trong provider dữ liệu. `App` là workspace
+ở route gốc, giữ trạng thái editor và cấu hình khi chuyển màn hình. Hai route hiện
+tại chọn màn hình qua `staticData.workspacePage` để giữ nguyên bản nháp khi đổi
+trang. Trang mới có thể dùng `component` và được render qua `Outlet` của workspace.
+
+Để thêm trang `/reports`, tạo `src/routes/reports.tsx`, export
+`Route = createFileRoute('/reports')({ component: ReportsPage })`. Có thể dùng
+thư mục như `src/routes/reports/index.tsx` để tổ chức các route lồng nhau. Plugin
+tự thêm route vào cây; không cần sửa `src/router.ts`. Dùng `Link` hoặc
+`useNavigate` để điều hướng. URL không có dấu `#`. `vercel.json` cấu hình SPA
+rewrite về `/index.html` để mở trực tiếp hoặc reload trang con trên Vercel.
+Nếu host ở nơi khác, cần cấu hình fallback tương đương. Build chạy Vite trước
+TypeScript để sinh cây route trước khi kiểm tra kiểu, kể cả khi chưa có
+`routeTree.gen.ts`.
+
 ## Thiết lập Convex
 
 1. Cài dependencies bằng phiên bản pnpm khai báo trong `package.json`:

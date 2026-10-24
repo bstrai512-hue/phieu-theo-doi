@@ -1,33 +1,36 @@
 import {
-  cleanCareDefaults,
-  emptyCareDefaults,
-  validCareDefaults,
+  cleanCareTemplateLibrary,
+  migrateCareTemplateLibrary,
+  emptyCareTemplateLibrary,
+  validCareTemplateLibrary,
 } from "../../forms/care-defaults-model";
-import type { CareDefaultsSnapshot } from "../../forms/care-defaults-model";
+import type { CareDefaultsSnapshot } from '../../types';
 import type { CareDefaultsStore } from "./contracts";
 const KEY = "care-defaults-v1";
 export function createLocalCareDefaults(
   storage: () => Pick<Storage, "getItem" | "setItem">,
+  workspaceKey = 'shared',
 ): CareDefaultsStore {
+  const key = workspaceKey === 'shared' ? KEY : `${KEY}:${workspaceKey}`;
   function read(): CareDefaultsSnapshot {
-    const raw = storage().getItem(KEY);
-    if (raw === null) return { revision: 0, value: emptyCareDefaults() };
+    const raw = storage().getItem(key);
+    if (raw === null) return { revision: 0, value: emptyCareTemplateLibrary() };
     const parsed = JSON.parse(raw) as CareDefaultsSnapshot;
     if (
       !parsed ||
       !Number.isInteger(parsed.revision) ||
       parsed.revision < 0 ||
-      !validCareDefaults(parsed.value)
+      !parsed.value
     )
       throw new Error("Không đọc được cấu hình mặc định đã lưu");
-    return parsed;
+    return { ...parsed, value: migrateCareTemplateLibrary(parsed.value) };
   }
   return {
     async get() {
       return structuredClone(read());
     },
     async update(value, expectedRevision) {
-      if (!validCareDefaults(value))
+      if (!validCareTemplateLibrary(value))
         throw new Error("Giá trị mặc định chưa hợp lệ");
       const previous = read();
       if (previous.revision !== expectedRevision)
@@ -36,15 +39,15 @@ export function createLocalCareDefaults(
         );
       const next = {
         revision: previous.revision + 1,
-        value: cleanCareDefaults(value),
+        value: cleanCareTemplateLibrary(value),
       };
-      storage().setItem(KEY, JSON.stringify(next));
+      storage().setItem(key, JSON.stringify(next));
       return structuredClone(next);
     },
     watch(onChange, onError) {
       if (typeof window === "undefined") return () => {};
       const listener = (event: StorageEvent) => {
-        if (event.key !== KEY && event.key !== null) return;
+        if (event.key !== key && event.key !== null) return;
         try {
           onChange(read());
         } catch {

@@ -7,7 +7,7 @@ import {
   selectedCareCodes,
   splitCareDetail,
 } from "./care-conventions";
-import type { CareKey } from "./model";
+import type { CareKey } from '../types';
 
 /** Each control owns conversion to stored code strings; empty always means unrecorded. */
 export function CareField({

@@ -1,6 +1,6 @@
 import { recordInput } from './contracts';
 import type { TreatmentServices } from './contracts';
-import type { Data } from './model';
+import type { Data } from '../../types';
 
 /** Reconcile the editor's JSON backup shape through the two CRUD interfaces. */
 export async function persistEditorData(services: TreatmentServices, id: string, data: Data, expectedRevision?: number) {

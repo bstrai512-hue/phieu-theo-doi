@@ -1,12 +1,12 @@
 import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
-import { requireTemplate, requireWorkspace, sharedKey, bumpRevision, checkRevision } from './access';
+import { requireTemplate, requireWorkspace, checkedWorkspaceKey, bumpRevision, checkRevision } from './access';
 import { template, templatePatch } from './validators';
 
 export const list = query({
   args: { workspaceKey: v.string() },
   handler: async (ctx, { workspaceKey }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     await requireWorkspace(ctx, workspaceKey);
     const items = await ctx.db.query('templates')
       .withIndex('by_workspace', q => q.eq('workspaceKey', workspaceKey)).collect();
@@ -16,7 +16,7 @@ export const list = query({
 export const create = mutation({
   args: { workspaceKey: v.string(), template },
   handler: async (ctx, { workspaceKey, template: item }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     await requireWorkspace(ctx, workspaceKey);
     const existing = await ctx.db.query('templates')
       .withIndex('by_workspace_id', q => q.eq('workspaceKey', workspaceKey).eq('id', item.id)).unique();
@@ -29,7 +29,7 @@ export const create = mutation({
 export const update = mutation({
   args: { workspaceKey: v.string(), id: v.string(), input: templatePatch },
   handler: async (ctx, { workspaceKey, id, input }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     const item = await requireTemplate(ctx, workspaceKey, id);
     await ctx.db.patch(item._id, input);
     return await bumpRevision(ctx, workspaceKey);
@@ -38,7 +38,7 @@ export const update = mutation({
 export const remove = mutation({
   args: { workspaceKey: v.string(), id: v.string() },
   handler: async (ctx, { workspaceKey, id }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     const item = await requireTemplate(ctx, workspaceKey, id);
     await ctx.db.delete(item._id);
     return await bumpRevision(ctx, workspaceKey);
@@ -48,7 +48,7 @@ export const remove = mutation({
 export const replaceAll = mutation({
   args: { workspaceKey: v.string(), templates: v.array(template), expectedRevision: v.optional(v.number()) },
   handler: async (ctx, { workspaceKey, templates, expectedRevision }) => {
-    workspaceKey = sharedKey(workspaceKey);
+    workspaceKey = checkedWorkspaceKey(workspaceKey);
     await checkRevision(ctx, workspaceKey, expectedRevision);
     if (new Set(templates.map(item => item.id)).size !== templates.length) throw new ConvexError('Mã mẫu bị trùng');
     const current = await ctx.db.query('templates').withIndex('by_workspace', q => q.eq('workspaceKey', workspaceKey)).collect();

@@ -6,7 +6,7 @@ import { createLocalTreatmentServices } from '../src/services/treatment-records/
 import { persistEditorData } from '../src/services/treatment-records/editor-data.ts';
 import { defaults } from '../src/services/treatment-records/model.ts';
 
-function setup({ exists = false, initializeFails = false } = {}) {
+function setup({ exists = false, initializeFails = false, workspaceKey = 'shared' } = {}) {
   const calls = [];
   let initialized = exists;
   let fail = initializeFails;
@@ -39,7 +39,7 @@ function setup({ exists = false, initializeFails = false } = {}) {
   }));
   return {
     calls, local,
-    services: createConvexTreatmentServices(client, () => 'a'.repeat(64), local),
+    services: createConvexTreatmentServices(client, () => workspaceKey, local),
   };
 }
 
@@ -68,8 +68,8 @@ test('failed migration rejects rather than silently saving locally, then can ret
   assert.equal(calls.filter(call => call.name === 'workspaces:initialize').length, 2);
 });
 
-test('CRUD routes through Convex with a shared workspace scope and immutable IDs', async () => {
-  const { services, calls } = setup({ exists: true });
+test('CRUD routes through Convex with the selected department scope and immutable IDs', async () => {
+  const { services, calls } = setup({ exists: true, workspaceKey: 'a'.repeat(64) });
   const { patient, forms } = defaults();
   const record = await services.records.create({ patient, forms });
   await services.records.get(record.id);
@@ -94,4 +94,40 @@ test('editor save uses one atomic Convex mutation rather than separate record/te
   await persistEditorData(services, 'current', data);
   assert.deepEqual(calls.map(call => call.name), ['workspaces:exists', 'records:saveEditor']);
   assert.deepEqual(calls[1].args.templates, data.templates);
+});
+
+test('a missing department never imports local shared records or initializes itself', async () => {
+  const { services, calls } = setup({ workspaceKey: 'b'.repeat(64) });
+  await assert.rejects(services.records.list(), /Không tìm thấy Khoa/);
+  assert.equal(calls.some(call => call.name === 'workspaces:initialize'), false);
+});
+
+test('an adapter keeps its original department for reads and realtime subscriptions after the selection changes', async () => {
+  const calls = [];
+  let key = 'a'.repeat(64);
+  let emit; let stopped = false; const snapshots = [];
+  const client = {
+    async query(reference, args) {
+      calls.push({name:getFunctionName(reference),args});
+      return getFunctionName(reference) === 'workspaces:exists' ? true : [];
+    },
+    async mutation() {},
+    watchQuery(reference,args) {
+      calls.push({name:getFunctionName(reference),args});
+      return {
+        localQueryResult: () => ({revision:0,records:[],templates:[]}),
+        onUpdate(callback) { emit=callback; return ()=>{stopped=true}; },
+      };
+    },
+  };
+  const local = createLocalTreatmentServices(()=>({getItem:()=>null,setItem(){}}));
+  const service = createConvexTreatmentServices(client,()=>key,local);
+  key='b'.repeat(64);
+  await service.records.list();
+  const stop=service.watch(value=>snapshots.push(value),()=>assert.fail('unexpected watch error'));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(snapshots.length,1);
+  stop(); emit();
+  assert.equal(stopped,true); assert.equal(snapshots.length,1);
+  for(const call of calls) assert.equal(call.args.workspaceKey,'a'.repeat(64));
 });

@@ -1,9 +1,16 @@
+import { WorkspaceSettingsPage } from './components/workspace-settings-page';
+import type { WorkspaceSettings, WorkspaceSettingsSnapshot } from './types/workspace';
+import { workspaces } from './services/treatment-records/provider';
+import { WorkspaceBoundary } from './components/workspace-boundary';
+import type { RegisterWorkspaceGuard } from './components/workspace-boundary';
+import type { Workspace } from './types';
 import { CareDefaultsPage } from './forms/care-defaults-page';
+import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useCareDefaults } from './services/treatment-records/use-care-defaults';
 import { TemplateLibrary, SaveTemplateEditor } from './forms/templates';
 import { PatientForm } from './forms/patient';
 import type { SetStateAction } from 'react';
-import type { FormKind, Forms } from './forms/model';
+import type { FormKind, Forms, Data, TemplateKind as Kind } from './types';
 import { FormTabs, PatientReview } from './forms/shared';
 import { TreatmentForm } from './forms/treatment';
 import { InfusionForm } from './forms/infusion';
@@ -21,31 +28,54 @@ import { summarizeRecord } from './services/treatment-records/episodes';
 import { recordInput } from './services/treatment-records/contracts';
 
 import { parseData, useTreatmentData } from './services/treatment-records';
-import type { Data, Kind } from './services/treatment-records';
+
 
 const uid=()=>crypto.randomUUID();
 type EpisodeView={day:string;session:'morning'|'afternoon'};
 export default function App(){
- const state=useTreatmentData();
+ return <WorkspaceBoundary>{(workspace,openPicker,registerGuard,onRenamed)=><DepartmentApp onRenamed={onRenamed} workspace={workspace} openPicker={openPicker} registerGuard={registerGuard}/>}</WorkspaceBoundary>;
+}
+function DepartmentApp(props:{onRenamed:(workspace:Workspace)=>void;workspace:Workspace;openPicker:()=>void;registerGuard:RegisterWorkspaceGuard}){
+ const [settings,setSettings]=useState<WorkspaceSettingsSnapshot|null>(null);
+ const [error,setError]=useState('');
+ const load=()=>{setError('');void workspaces.settings(props.workspace.key).then(setSettings,()=>setError('Không tải được cấu hình Khoa. Kiểm tra kết nối và thử lại.'))};
+ useEffect(()=>{let cancelled=false;void workspaces.settings(props.workspace.key).then(next=>{if(!cancelled)setSettings(next)},()=>{if(!cancelled)setError('Không tải được cấu hình Khoa.')});return()=>{cancelled=true}},[props.workspace.key]);
+ if(error)return <div role="alert" className="p-6">{error}<Button onClick={load}>Thử lại</Button><Button variant="outline" onClick={props.openPicker}>Đổi Khoa</Button></div>;
+ if(!settings)return <p role="status" className="p-6">Đang tải cấu hình Khoa…</p>;
+ return <LoadedDepartmentApp {...props} settings={settings} setSettings={setSettings}/>;
+}
+function LoadedDepartmentApp({workspace,openPicker,registerGuard,settings,setSettings,onRenamed}:{workspace:Workspace;openPicker:()=>void;registerGuard:RegisterWorkspaceGuard;onRenamed:(workspace:Workspace)=>void;settings:WorkspaceSettingsSnapshot;setSettings:(next:WorkspaceSettingsSnapshot)=>void}){
+ const state=useTreatmentData(settings.value);
  const careDefaults=useCareDefaults();
- const [page,setPage]=useState<'episode'|'defaults'>(()=>window.location.hash==='#/care-defaults'?'defaults':'episode');
- useEffect(()=>{const sync=()=>setPage(window.location.hash==='#/care-defaults'?'defaults':'episode');window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync)},[]);
- const navigate=(target:'episode'|'defaults')=>{window.location.hash=target==='defaults'?'/care-defaults':'/';setPage(target)};
+ const settingsGuard=useRef<()=>Promise<boolean>>(async()=>true);
+ const registerSettingsGuard=useCallback((guard:()=>Promise<boolean>)=>{settingsGuard.current=guard;return()=>{if(settingsGuard.current===guard)settingsGuard.current=async()=>true}},[]);
+ const careGuard=useRef<()=>Promise<boolean>>(async()=>true);
+ const registerCareGuard=useCallback((guard:()=>Promise<boolean>)=>{careGuard.current=guard;return()=>{if(careGuard.current===guard)careGuard.current=async()=>true}},[]);
+ useEffect(()=>registerGuard(async()=>{
+   if(!await settingsGuard.current())return false;
+   if(!await careGuard.current())return false;
+   return state.prepareToLeave();
+ }),[registerGuard,state.prepareToLeave]);
+ const routerNavigate=useNavigate();
+ const page=useRouterState({select:state=>state.matches[state.matches.length-1]?.staticData.workspacePage});
+ const navigate=(target:'episode'|'defaults'|'settings')=>{void routerNavigate({to:target==='defaults'?'/khoa/$workspaceKey/care-defaults':target==='settings'?'/khoa/$workspaceKey/cau-hinh':'/khoa/$workspaceKey',params:{workspaceKey:workspace.slug??workspace.key}})};
  const openDefaults=async()=>{try{await state.flush();navigate('defaults')}catch{navigate('episode')}};
 
  const [library,setLibrary]=useState(false);const [help,setHelp]=useState(false);
  const [episodeQuery,setEpisodeQuery]=useState('');const [filter,setFilter]=useState('active');
  const views=useRef(new Map<string,EpisodeView>());
  const rememberView=useCallback((id:string,view:EpisodeView)=>{views.current.set(id,view)},[]);
- if(state.loadError)return <div role="alert" className="p-6"><p>Không thể đọc dữ liệu: {state.loadError}</p><Button onClick={()=>window.location.reload()}>Thử lại</Button></div>;
+ if(state.loadError)return <div role="alert" className="p-6"><Button variant="outline" onClick={openPicker}>Đổi Khoa</Button><p>Không thể đọc dữ liệu: {state.loadError}</p><Button onClick={()=>window.location.reload()}>Thử lại</Button></div>;
  if(!state.data)return <div role="status" className="p-6">Đang tải các đợt điều trị…</div>;
  return <div className="app-shell">
-  <EpisodeSidebar {...state} query={episodeQuery} filter={filter} onQuery={setEpisodeQuery} onFilter={setFilter} onSelect={async id=>{const result=await state.selectRecord(id);if(result)navigate('episode');return result}} onNew={async()=>{const result=await state.newDraft();if(result)navigate('episode');return result}} onLibrary={()=>{navigate('episode');setLibrary(true)}} onHelp={()=>{navigate('episode');setHelp(true)}} onDefaults={()=>void openDefaults()} defaultsActive={page==='defaults'}/>
-  <CareDefaultsPage active={page==='defaults'} {...careDefaults} onReload={()=>void careDefaults.reload()} onSave={careDefaults.update} onBack={()=>navigate('episode')}/>
-  <TreatmentEditor active={page==='episode'} careDefaults={careDefaults} key={state.viewKey} {...state} data={state.data} library={library} setLibrary={setLibrary} help={help} setHelp={setHelp} initialView={views.current.get(state.viewKey)} rememberView={rememberView} onStatusChange={async status=>{if(await state.changeStatus(status))setFilter(status)}}/>
+  <EpisodeSidebar onSettings={()=>navigate('settings')} settingsActive={page==='settings'} workspaceName={workspace.name} onWorkspaceChange={openPicker} {...state} query={episodeQuery} filter={filter} onQuery={setEpisodeQuery} onFilter={setFilter} onSelect={async id=>{const result=await state.selectRecord(id);if(result)navigate('episode');return result}} onNew={async()=>{if(!await settingsGuard.current())return false;const result=await state.newDraft();if(result)navigate('episode');return result}} onLibrary={()=>{navigate('episode');setLibrary(true)}} onHelp={()=>{navigate('episode');setHelp(true)}} onDefaults={()=>void openDefaults()} defaultsActive={page==='defaults'}/>
+  <WorkspaceSettingsPage onRenamed={onRenamed} active={page==='settings'} workspaceKey={workspace.key} name={workspace.name} slug={workspace.slug??workspace.key} snapshot={settings} onSaved={setSettings} registerLeaveGuard={registerSettingsGuard}/>
+  <CareDefaultsPage registerLeaveGuard={registerCareGuard} active={page==='defaults'} {...careDefaults} onReload={()=>void careDefaults.reload()} onSave={careDefaults.update} onBack={()=>navigate('episode')}/>
+  <TreatmentEditor settings={settings.value} active={page==='episode'} careDefaults={careDefaults} key={state.viewKey} {...state} data={state.data} library={library} setLibrary={setLibrary} help={help} setHelp={setHelp} initialView={views.current.get(state.viewKey)} rememberView={rememberView} onStatusChange={async status=>{if(await state.changeStatus(status))setFilter(status)}}/>
+  <Outlet/>
  </div>;
 }
-function TreatmentEditor({active,careDefaults,data,setData,saved,storageError,storage,recordId,viewKey,busy,conflict,resolveConflict,actionError,flush,library,setLibrary,help,setHelp,initialView,rememberView,onStatusChange,deleteRecord}:Omit<ReturnType<typeof useTreatmentData>,'data'> & {active:boolean;careDefaults:ReturnType<typeof useCareDefaults>;data:Data;library:boolean;setLibrary:(open:boolean)=>void;help:boolean;setHelp:(open:boolean)=>void;initialView?:EpisodeView;rememberView:(id:string,view:EpisodeView)=>void;onStatusChange:(status:'active'|'completed')=>Promise<void>}){
+function TreatmentEditor({settings,active,careDefaults,data,setData,saved,storageError,storage,recordId,viewKey,busy,conflict,resolveConflict,actionError,flush,library,setLibrary,help,setHelp,initialView,rememberView,onStatusChange,deleteRecord}:Omit<ReturnType<typeof useTreatmentData>,'data'> & {settings:WorkspaceSettings;active:boolean;careDefaults:ReturnType<typeof useCareDefaults>;data:Data;library:boolean;setLibrary:(open:boolean)=>void;help:boolean;setHelp:(open:boolean)=>void;initialView?:EpisodeView;rememberView:(id:string,view:EpisodeView)=>void;onStatusChange:(status:'active'|'completed')=>Promise<void>}){
  const cloud=storage==='cloud';
  const [toast,setToast]=useState('');const [saveModal,setSaveModal]=useState<{kind:Kind;text:string}|null>(null);const fileRef=useRef<HTMLInputElement>(null);
  const notify=(s:string)=>setToast(s);
@@ -69,7 +99,7 @@ function TreatmentEditor({active,careDefaults,data,setData,saved,storageError,st
    <main inert={busy} aria-busy={busy}><div className="page-heading no-print"><div className="episode-view-title"><h1>{episode.patientName.trim()||(recordId?'Đợt chưa đặt tên':'Đợt mới')}</h1><p>{recordId?'Các phiếu theo dõi trong đợt':'Nhập trực tiếp vào mẫu. Đợt điều trị sẽ được tạo và tự lưu khi bạn bắt đầu nhập.'}</p><div className="episode-context"><span className={`episode-status ${episode.status==='completed'?'is-completed':''}`}>{episode.status==='completed'?'Đã kết thúc':'Đang điều trị'}</span><span>Bắt đầu {formatDay(episode.startedOn)}</span>{data.endedOn&&episode.status==='completed'&&<span>Kết thúc {formatDay(data.endedOn)}</span>}{recordId&&<Button variant="ghost" className="episode-status-action" onClick={()=>void onStatusChange(episode.status==='completed'?'active':'completed')}>{episode.status==='completed'?'Tiếp tục điều trị':'Kết thúc đợt'}</Button>}</div></div><div className="flex flex-wrap gap-2">{recordId&&<Button variant="ghost" className="text-red-600 hover:text-red-700" disabled={busy} onClick={()=>setDeleteEpisodeOpen(true)}><Trash2/>Xóa đợt</Button>}<Button variant="outline" onClick={()=>setLibrary(true)}><BookOpen/>Thư viện mẫu</Button></div></div>
     <div className="print-heading"><strong>BỆNH VIỆN ĐA KHOA BÌNH DƯƠNG</strong><h1>PHIẾU THEO DÕI ĐIỀU TRỊ</h1><p>MS:36/BV-02</p></div>
     <PatientReview data={data} onChange={setData}/>
-    <PatientForm data={data.patient} disabled={!canPrint} onChange={value=>setData(current=>({...current,patient:typeof value==='function'?value(current.patient):value}))}/>
+    <PatientForm settings={settings} data={data.patient} disabled={!canPrint} onChange={value=>setData(current=>({...current,patient:typeof value==='function'?value(current.patient):value}))}/>
     <FormTabs value={form} onChange={setForm}/>
     <div id="active-form" role="tabpanel" aria-labelledby={`form-tab-${form}`}>
     {form==='treatment'&&<TreatmentForm rows={data.forms.treatment.rows} onChange={value=>changeForm('treatment',old=>({rows:typeof value==='function'?value(old.rows):value}))} patient={data.patient} templates={data.templates} onSaveTemplate={setSaveModal} notify={notify} saved={saved} storageError={storageError} canPrint={canPrint} initialView={treatmentView.current} rememberView={rememberTreatment}/>}

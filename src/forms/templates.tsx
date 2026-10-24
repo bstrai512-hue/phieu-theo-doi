@@ -4,7 +4,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { Check, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import type { Kind, Template } from "../services/treatment-records/model";
+import type { TemplateKind as Kind, Template } from '../types';
 const labels = { progress: "Diễn biến bệnh", orders: "Chỉ định" };
 type TextDraft = { text: string };
 const nonEmpty = (value: string) => !!value.trim() || "Nhập nội dung mẫu";

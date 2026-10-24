@@ -1,7 +1,8 @@
+import { ordersText } from './treatment-orders';
 import { dayjs, parseDay } from './date';
 import { sessionOf } from './daily-records';
-type Patient={name:string;birth:string;gender:string;code:string;admission:string;department:string;room:string;bed:string;diagnosis:string;differential:string};
-type Row={id?:string;time:string;progress:string;orders:string;session?:'morning'|'afternoon'};
+import type { Patient, TreatmentRow } from '../types';
+type Row = Omit<TreatmentRow, 'id'> & { id?: string };
 const escape=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const value=(s:string)=>s.trim()?escape(s):'................';
 function dateLabel(s:string){const date=parseDay(s);return date.isValid()?date.format('DD/MM/YYYY'):s}
@@ -34,7 +35,7 @@ export function printForm(basePatient:Patient,rows:Row[],patientsByDay:Record<st
   const linesFor=(session:'morning'|'afternoon'):Line[]=>{
    const selected=items.filter(row=>sessionOf({...row,id:row.id??''})===session);
    const progress=wrapText(selected.map(r=>r.progress.trim()).filter(Boolean).join('\n'),65);
-   const orders=wrapText(selected.map(r=>r.orders.trim()).filter(Boolean).join('\n'),88);
+   const orders=wrapText(selected.map(r=>ordersText(r.orders).trim()).filter(Boolean).join('\n'),88);
    return Array.from({length:Math.max(1,progress.length,orders.length)},(_,i)=>({progress:progress[i]||'',orders:orders[i]||'',label:i===0?(session==='morning'?'Sáng':'Chiều'):undefined}));
   };
   const morning=linesFor('morning'),afternoon=linesFor('afternoon');

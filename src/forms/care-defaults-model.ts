@@ -1,5 +1,5 @@
 import { careGroups } from "./model";
-import type { CareKey, CareObservation } from "./model";
+import type { CareKey, CareObservation, CareDefaults, CareTemplateLibrary } from '../types';
 import {
   careConventions,
   careValueIssue,
@@ -7,8 +7,7 @@ import {
   splitCareDetail,
 } from "./care-conventions";
 
-export type CareDefaults = { values: Partial<Record<CareKey, string>> };
-export type CareDefaultsSnapshot = { revision: number; value: CareDefaults };
+
 export const emptyCareDefaults = (): CareDefaults => ({ values: {} });
 const keys = new Set<string>(
   careGroups.flatMap((group) => group.fields.map(([key]) => key)),
@@ -82,4 +81,33 @@ export function makeCareObservation(
     time,
     values: structuredClone(cleanCareDefaults(defaults).values),
   };
+}
+
+
+export const emptyCareTemplateLibrary = (): CareTemplateLibrary => ({ templates: [], defaultTemplateId: null });
+
+export function migrateCareTemplateLibrary(value: unknown): CareTemplateLibrary {
+  if (validCareTemplateLibrary(value)) return structuredClone(value);
+  if (!validCareDefaults(value)) throw new Error("Không đọc được thư viện mẫu chăm sóc");
+  // A stable ID keeps migration deterministic across reads and devices.
+  return { templates: [{ id: "legacy-default", name: "Mẫu mặc định hiện tại", ...cleanCareDefaults(value) }], defaultTemplateId: "legacy-default" };
+}
+
+export function validCareTemplateLibrary(value: unknown): value is CareTemplateLibrary {
+  if (!value || typeof value !== "object") return false;
+  const library = value as CareTemplateLibrary;
+  return Array.isArray(library.templates)
+    && library.templates.every(t => t && typeof t.id === "string" && !!t.id && typeof t.name === "string" && !!t.name.trim() && validCareDefaults(t))
+    && new Set(library.templates.map(t => t.id)).size === library.templates.length
+    && (library.defaultTemplateId === null || library.templates.some(t => t.id === library.defaultTemplateId));
+}
+
+export function cleanCareTemplateLibrary(value: CareTemplateLibrary): CareTemplateLibrary {
+  return { defaultTemplateId: value.defaultTemplateId, templates: value.templates.map(t => ({ id: t.id, name: t.name.trim(), ...cleanCareDefaults(t) })) };
+}
+
+/** The last recorded observation wins over any template, including legacy values. */
+export function nextCareObservation(previous: CareObservation[], library: CareTemplateLibrary, templateId: string | null, time: string): CareObservation {
+  const source = previous.at(-1) ?? library.templates.find(t => t.id === templateId) ?? emptyCareDefaults();
+  return makeCareObservation(source, time);
 }

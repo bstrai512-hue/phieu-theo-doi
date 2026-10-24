@@ -1,7 +1,7 @@
 import { formValuesKey, patchFormValue } from "./form-values";
 import type { FieldPath, FieldPathValue } from "react-hook-form";
 import { careGroups } from "./model";
-import type { CareData } from "./model";
+import type { CareData } from '../types';
 
 /** All RHF controls start with defined values, including fields on hidden time points. */
 export function careEditorValues(data: CareData): CareData {

@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTreatmentServices } from "./provider";
-import type {
-  CareDefaults,
-  CareDefaultsSnapshot,
-} from "../../forms/care-defaults-model";
+import type { CareTemplateLibrary, CareDefaultsSnapshot } from '../../types';
 
 export function useCareDefaults() {
   const { careDefaults: store } = useTreatmentServices();
@@ -38,7 +35,7 @@ export function useCareDefaults() {
     };
   }, [store, reload, accept]);
   const update = useCallback(
-    async (value: CareDefaults, revision: number) => {
+    async (value: CareTemplateLibrary, revision: number) => {
       try {
         const next = await store.update(value, revision);
         accept(next);

@@ -10,8 +10,8 @@ import {
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent } from "../components/ui/dialog";
 import { formLabels } from "./model";
-import type { FormKind } from "./model";
-import type { Data, Patient } from "../services/treatment-records/model";
+import type { FormKind, Data, Patient } from '../types';
+
 const kinds: FormKind[] = ["treatment", "infusion", "care"];
 const icons = { treatment: Activity, infusion: Droplets, care: ClipboardList };
 export function FormTabs({

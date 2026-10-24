@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { careGroups } from "./model";
-import type { CareKey } from "./model";
+import type { CareKey } from '../types';
 
 /** Shared grouping and field order for patient entries and default configuration. */
 export function CareObservationFields({

@@ -1,3 +1,5 @@
+import { OrdersEditor } from '../components/treatment-orders/orders-editor';
+import { appendOrdersText, ordersDocument, ordersText } from '../lib/treatment-orders';
 import { useController, useForm } from "react-hook-form";
 import { useSynchronizedForm } from "./use-synchronized-form";
 import { useEffect, useRef, useState } from "react";
@@ -30,12 +32,7 @@ import {
 } from "../lib/daily-records";
 import { printForm } from "../lib/print-form";
 import { localTime } from "../services/treatment-records/model";
-import type {
-  Kind,
-  Template,
-  Patient,
-  Row,
-} from "../services/treatment-records/model";
+import type { TemplateKind as Kind, Template, Patient, TreatmentRow as Row, DrugName, TreatmentOrders } from '../types';
 import type { Dispatch, SetStateAction } from "react";
 const uid = () => crypto.randomUUID();
 const labels = { progress: "Diễn biến bệnh", orders: "Chỉ định" };
@@ -121,7 +118,9 @@ export function TreatmentForm({
   canPrint,
   initialView,
   rememberView,
+  drugNames: suppliedNames = [],
 }: {
+  drugNames?: readonly DrugName[];
   rows: Row[];
   onChange: Dispatch<SetStateAction<Row[]>>;
   patient: Patient;
@@ -149,6 +148,9 @@ export function TreatmentForm({
     initialView?.session ?? "morning",
   );
   const content = dayContent(rows, activeDay, session);
+  const drugNames = [...new Map([...suppliedNames, ...rows.flatMap(row => ordersDocument(row.orders).items
+    .flatMap(item => item.kind === 'medication' && item.name.trim() ? [{ id: item.name, name: item.name }] : []))]
+    .map(item => [item.name, item])).values()];
   useEffect(() => {
     rememberView({ day: activeDay, session });
   }, [activeDay, session, rememberView]);
@@ -178,7 +180,7 @@ export function TreatmentForm({
     setDayError("");
     setNewDayOpen(true);
   };
-  const changeContent = (k: Kind, text: string) =>
+  const changeContent = <K extends Kind>(k: K, text: TreatmentContent[K]) =>
     onChange((current) => updateDay(current, activeDay, k, text, session));
   const createDay = () => {
     try {
@@ -341,7 +343,7 @@ export function TreatmentForm({
                 <span>
                   {part === "morning" ? "Mặt trước" : "Mặt sau"}
                   {dayContent(rows, activeDay, part).progress.trim() ||
-                  dayContent(rows, activeDay, part).orders.trim()
+                  ordersText(dayContent(rows, activeDay, part).orders).trim()
                     ? " · Có nội dung"
                     : ""}
                 </span>
@@ -358,6 +360,7 @@ export function TreatmentForm({
             activeDay={activeDay}
             session={session}
             content={content}
+            drugNames={drugNames}
             templates={templates}
             onChange={changeContent}
             onSaveTemplate={onSaveTemplate}
@@ -548,104 +551,46 @@ export function TreatmentForm({
   );
 }
 
-type TreatmentContent = { progress: string; orders: string };
-type TreatmentEditor = ReturnType<typeof useSynchronizedForm<TreatmentContent>>;
-function TreatmentSessionEditor({
-  activeDay,
-  session,
-  content,
-  templates,
-  onChange,
-  onSaveTemplate,
-}: {
+type TreatmentContent = { progress: string; orders: TreatmentOrders };
+type TreatmentEditor = ReturnType<typeof useSynchronizedForm<{ progress: string }>>;
+function TreatmentSessionEditor({ activeDay, session, content, templates, drugNames, onChange, onSaveTemplate }: {
   activeDay: string;
   session: "morning" | "afternoon";
   content: TreatmentContent;
   templates: Template[];
-  onChange: (kind: Kind, text: string) => void;
+  drugNames: readonly DrugName[];
+  onChange: <K extends Kind>(kind: K, value: TreatmentContent[K]) => void;
   onSaveTemplate: (value: { kind: Kind; text: string }) => void;
 }) {
-  const editor = useSynchronizedForm(content, (name, value) =>
-    onChange(name, value),
-  );
-  return (
-    <div
-      id="session-editor"
-      role="tabpanel"
-      aria-labelledby={`session-${session}`}
-      className="daily-columns"
-    >
-      {(["progress", "orders"] as Kind[]).map((k) => (
-        <section className="daily-column" key={`${activeDay}-${session}-${k}`}>
-          <div className="daily-column-title">
-            <FileText size={17} />
-            <h3>{labels[k]}</h3>
-          </div>
-          <div className="daily-tools">
-            <Picker
-              kind={k}
-              templates={templates.filter((t) => t.kind === k)}
-              onSelect={(text) =>
-                editor.change(
-                  k,
-                  `${editor.form.getValues(k).trim()}${editor.form.getValues(k).trim() ? "\n" : ""}${text}`,
-                )
-              }
-            />
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!content[k].trim()}
-              onClick={() => onSaveTemplate({ kind: k, text: content[k] })}
-            >
-              <LayoutTemplate />
-              Lưu mẫu
-            </Button>
-          </div>
-          <label className="daily-text-label">
-            <span className="sr-only">
-              {labels[k]} {session === "morning" ? "buổi sáng" : "buổi chiều"}{" "}
-              ngày {formatDay(activeDay)}
-            </span>
-            <TreatmentTextControl
-              editor={editor}
-              name={k}
-              label={`${labels[k]} ${session === "morning" ? "buổi sáng" : "buổi chiều"} ngày ${formatDay(activeDay)}`}
-              placeholder={
-                k === "progress"
-                  ? "Chọn nội dung có sẵn hoặc ghi diễn biến buổi này…"
-                  : "Chọn nội dung có sẵn hoặc ghi chỉ định buổi này…"
-              }
-            />
-          </label>
-          <div className="daily-column-footer">
-            <span>{content[k].length} ký tự</span>
-            <span>Mỗi lần Enter là một dòng mới</span>
-          </div>
-        </section>
-      ))}
-    </div>
-  );
+  const editor = useSynchronizedForm({ progress: content.progress }, (_name, value) => onChange('progress', value));
+  return <div id="session-editor" role="tabpanel" aria-labelledby={`session-${session}`} className="daily-columns">
+    {(["progress", "orders"] as const).map(kind => {
+      const text = kind === 'orders' ? ordersText(content.orders) : content.progress;
+      return <section className="daily-column" key={`${activeDay}-${session}-${kind}`}>
+        <div className="daily-column-title"><FileText size={17} /><h3>{labels[kind]}</h3></div>
+        <div className="daily-tools">
+          <Picker kind={kind} templates={templates.filter(template => template.kind === kind)} onSelect={selected => {
+            if (kind === 'orders') onChange('orders', appendOrdersText(content.orders, selected));
+            else {
+              const current = editor.form.getValues('progress');
+              editor.change('progress', `${current.trim()}${current.trim() ? "\n" : ""}${selected}`);
+            }
+          }} />
+          <Button size="sm" variant="ghost" disabled={!text.trim()} onClick={() => onSaveTemplate({ kind, text })}>
+            <LayoutTemplate data-icon="inline-start" />Lưu mẫu
+          </Button>
+        </div>
+        {kind === 'orders' ? <OrdersEditor value={content.orders} onChange={value => onChange('orders', value)} drugNames={drugNames}
+          label={`Chỉ định ${session === 'morning' ? 'buổi sáng' : 'buổi chiều'} ngày ${formatDay(activeDay)}`} />
+          : <><label className="daily-text-label"><TreatmentTextControl editor={editor}
+            label={`Diễn biến bệnh ${session === 'morning' ? 'buổi sáng' : 'buổi chiều'} ngày ${formatDay(activeDay)}`} /></label>
+            <div className="daily-column-footer"><span>{text.length} ký tự</span><span>Mỗi lần Enter là một dòng mới</span></div></>}
+      </section>;
+    })}
+  </div>;
 }
-function TreatmentTextControl({
-  editor,
-  name,
-  label,
-  placeholder,
-}: {
-  editor: TreatmentEditor;
-  name: Kind;
-  label: string;
-  placeholder: string;
-}) {
-  const { field } = useController({ control: editor.form.control, name });
-  return (
-    <textarea
-      {...field}
-      aria-label={label}
-      onChange={(event) => editor.change(name, event.target.value)}
-      placeholder={placeholder}
-      rows={12}
-    />
-  );
+function TreatmentTextControl({ editor, label }: { editor: TreatmentEditor; label: string }) {
+  const { field } = useController({ control: editor.form.control, name: 'progress' });
+  return <textarea {...field} aria-label={label} onChange={event => editor.change('progress', event.target.value)}
+    placeholder="Chọn nội dung có sẵn hoặc ghi diễn biến buổi này…" rows={12} />;
 }

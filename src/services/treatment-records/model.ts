@@ -1,30 +1,11 @@
 import { dayjs } from '../../lib/date';
-
-export type Kind = 'progress' | 'orders';
-export type Template = { id: string; kind: Kind; text: string; group: string };
-export type { TreatmentRow as Row } from '../../forms/model';
 import { emptyCare, validForms, validTreatmentRows } from '../../forms/model';
-import type { Forms } from '../../forms/model';
-import type { TreatmentRow as Row } from '../../forms/model';
-export type Patient = {
-  name: string; birth: string; gender: string; code: string; admission: string;
-  department: string; room: string; bed: string; diagnosis: string; differential: string;
-};
-export type PatientReview = { base: Patient; byDay: Record<string, Patient>; resolved: boolean };
-export type Data = {
-  version: 2;
-  patient: Patient;
-  forms: Forms;
-  templates: Template[];
-  patientReview?: PatientReview;
-  status?: 'active' | 'completed';
-  startedOn?: string;
-  endedOn?: string | null;
-};
-export type LegacyData = Omit<Data, 'version' | 'forms' | 'patientReview'> & { version: 1; rows: Row[]; dayPatients?: Record<string, Patient> };
+import type { Data, Patient, Template, TemplateKind, TreatmentRow } from '../../types';
+
+type LegacyData = Omit<Data, 'version' | 'forms' | 'patientReview'> & { version: 1; rows: TreatmentRow[]; dayPatients?: Record<string, Patient> };
 
 export const localTime = () => dayjs().format('YYYY-MM-DDTHH:mm');
-export const makeRow = (): Row => ({ id: crypto.randomUUID(), time: localTime(), progress: '', orders: '' });
+export const makeRow = (): TreatmentRow => ({ id: crypto.randomUUID(), time: localTime(), progress: '', orders: '' });
 export const blankPatient: Patient = {
   name: '', birth: '', gender: '', code: '', admission: '', department: '', room: '', bed: '', diagnosis: '', differential: '',
 };
@@ -35,7 +16,7 @@ const initialTemplates: Template[] = [
   ['progress', 'Phổi thông khí đều hai bên.', 'Thăm khám'], ['progress', 'Bụng mềm, không chướng.', 'Thăm khám'],
   ['orders', 'Theo dõi dấu hiệu sinh tồn.', 'Theo dõi'], ['orders', 'Theo dõi tình trạng ăn uống.', 'Theo dõi'],
   ['orders', 'Theo dõi lượng nước tiểu.', 'Theo dõi'],
-].map(([kind, text, group], index) => ({ id: `seed-${index}`, kind: kind as Kind, text, group }));
+].map(([kind, text, group], index) => ({ id: `seed-${index}`, kind: kind as TemplateKind, text, group }));
 
 export const defaults = (): Data => ({
   version: 2, patient: { ...blankPatient }, forms: { treatment: { rows: [makeRow()] }, infusion: { rows: [] }, care: emptyCare() }, templates: structuredClone(initialTemplates),

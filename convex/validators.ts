@@ -4,8 +4,23 @@ export const patient = v.object({
   name: v.string(), birth: v.string(), gender: v.string(), code: v.string(), admission: v.string(),
   department: v.string(), room: v.string(), bed: v.string(), diagnosis: v.string(), differential: v.string(),
 });
+const orderRelation = v.union(
+  v.object({ id: v.string(), kind: v.literal('mix'), name: v.string(), amount: v.string(), unit: v.string() }),
+  v.object({ id: v.string(), kind: v.literal('note'), text: v.string() }),
+);
+export const treatmentOrders = v.union(v.string(), v.object({
+  version: v.literal(1),
+  items: v.array(v.union(
+    v.object({ id: v.string(), kind: v.literal('text'), text: v.string() }),
+    v.object({
+      id: v.string(), kind: v.literal('medication'), name: v.string(), strength: v.string(),
+      dose: v.string(), unit: v.string(), repeat: v.string(), route: v.string(), timing: v.string(), marker: v.string(),
+      rate: v.object({ value: v.string(), unit: v.string() }), relations: v.array(orderRelation),
+    }),
+  )),
+}));
 export const row = v.object({
-  id: v.string(), time: v.string(), progress: v.string(), orders: v.string(),
+  id: v.string(), time: v.string(), progress: v.string(), orders: treatmentOrders,
   session: v.optional(v.union(v.literal('morning'), v.literal('afternoon'))),
 });
 // Additive schema: old records remain readable until their first v2 save.

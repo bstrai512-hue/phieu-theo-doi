@@ -50,12 +50,48 @@ Thông tin người bệnh, cả ba loại phiếu, trang cấu hình mặc đ�
 - Nội dung điều trị có form riêng cho mỗi ngày/buổi, khóa theo ngữ cảnh đó. Chọn nội dung từ thư viện cập nhật cả RHF và các dòng nguồn trong cùng sự kiện; sao chép/xóa ngày tiếp tục dùng logic nghiệp vụ hiện có.
 - Các form tạo/sửa mẫu và ngày đích là bản nháp cục bộ, chỉ áp dụng khi xác nhận. Thay đổi dữ liệu phiếu vẫn đi ngay vào workspace để thao tác chuyển đợt buộc lưu được toàn bộ phần vừa nhập.
 
-## Mặc định phiếu chăm sóc
+## Thư viện mẫu chăm sóc
 
-1. Mở “Mặc định phiếu chăm sóc” ở thanh bên (`#/care-defaults`).
-2. Điền các giá trị muốn dùng và bấm “Lưu cấu hình”. Ban đầu cấu hình trống; ứng dụng không tự đặt các chỉ số lâm sàng.
-3. Thêm mốc theo dõi trong phiếu chăm sóc. `makeCareObservation` sao chép cấu hình đã lưu vào mốc mới; sửa cấu hình sau đó không thay đổi mốc cũ. Thông tin người bệnh, dị ứng, chẩn đoán và mục tiêu không thuộc cấu hình này.
+1. Mở “Mẫu chăm sóc” ở thanh bên (`/care-defaults`).
+2. Thêm mẫu, đặt tên, điền các giá trị theo quy ước. Chọn “Đặt làm mặc định” nếu muốn chọn sẵn mẫu đó. Bấm “Lưu thư viện” để lưu mọi thay đổi.
+3. Khi phiếu chưa có mốc, chọn mẫu hoặc “Để trống”, rồi thêm mốc đầu tiên.
+4. Mỗi mốc tiếp theo sao chép giá trị của mốc cuối cùng trong danh sách, kể cả khi đang xem mốc cũ. `nextCareObservation` tạo ID và thời gian mới, sao chép độc lập các giá trị đã chỉnh; không đọc lại mẫu để ghi đè mốc sau.
 
-`CareObservationFields` dùng chung bố cục nhóm ô giữa trang cấu hình và phiếu thực tế. `CareConventionControl` nối RHF với `CareField`, dùng cùng quy ước và kiểm tra giá trị. Khi bổ sung trường, cập nhật `careGroups` và `care-conventions.ts` để cả hai màn hình nhận cùng định nghĩa.
+`CareObservationFields` và `CareConventionControl` dùng chung định nghĩa trường, quy ước và ô nhập giữa mẫu và phiếu. Thông tin người bệnh, dị ứng và chẩn đoán/mục tiêu không nằm trong mẫu.
 
-Trang cấu hình chỉ lưu khi xác nhận, giữ bản đang sửa khi chuyển trang và yêu cầu chọn cách xử lý khi cấu hình từ xa thay đổi. `CareDefaultsStore` che giấu adapter localStorage/Convex; cấu hình có revision riêng, dùng chung trong workspace, không ghi lại các đợt điều trị. Bản sao JSON của đợt giữ các giá trị đã khởi tạo trong từng mốc, không chứa cấu hình mặc định toàn workspace.
+`CareDefaultsStore` là seam lưu thư viện với hai adapter localStorage/Convex. Interface chỉ gồm đọc, ghi toàn thư viện có kiểm tra revision và theo dõi thay đổi. Thư viện có revision riêng với đợt điều trị; mỗi mẫu có ID, tên, giá trị; `defaultTemplateId` trỏ tới một mẫu hoặc null. Xóa mẫu mặc định sẽ bỏ lựa chọn mặc định, không tự chọn mẫu khác.
+
+Cấu hình đơn cũ được chuyển khi đọc thành “Mẫu mặc định hiện tại” với ID ổn định, giữ revision và các giá trị. Đọc không ghi lại dữ liệu; lần lưu kế tiếp dùng cấu trúc thư viện. Backend chấp nhận dữ liệu lưu cũ nhưng thao tác ghi yêu cầu cấu trúc mới; tải lại các tab cũ sau cập nhật.
+
+Trang chỉ lưu khi xác nhận, giữ bản đang sửa khi chuyển trang và cho chọn xử lý khi có cập nhật từ xa. Sửa/xóa mẫu không thay đổi các mốc đã ghi. Bản sao JSON của đợt chứa giá trị từng mốc, không chứa thư viện mẫu toàn workspace.
+
+## Chỉ định điều trị có cấu trúc
+
+`components/treatment-orders/orders-editor.tsx` là component controlled, nhận
+`value`, `onChange`, `drugNames?` và `label?`. Component không truy cập adapter
+hoặc DB. `drug-name-input.tsx` dùng shadcn Combobox, cho gõ tự do hoặc chọn tên;
+chỉ điền tên, không tự thêm vào thư viện hoặc điền thông tin sử dụng thuốc.
+Host có thể truyền thư viện tên vào `TreatmentForm.drugNames`; hiện tại gợi ý
+bổ sung từ các thuốc đã nhập trong cùng đợt, không có danh mục mẫu trên sản phẩm.
+
+Type ở `types/treatment-orders.ts`. `TreatmentRow.orders` chấp nhận chuỗi cũ
+hoặc `{ version: 1, items: [...] }`; version này độc lập với `Data.version: 2`.
+Không chuyển đoán văn bản cũ thành thuốc. Khi sửa, nội dung cũ được giữ trong
+một mục văn bản nguyên vẹn. Validator ở frontend và Convex kiểm tra cấu trúc;
+version chưa hỗ trợ bị từ chối khi đọc/import, không bỏ nội dung âm thầm.
+
+Các ô của chỉ định cập nhật RHF và workspace ngay trong sự kiện, kể cả bản
+nháp chưa đủ thông tin. “Xong” chỉ thu gọn, không phải nút lưu. Tạo/xóa mục,
+pha/ghi chú và đổi thứ tự cũng cập nhật ngay. Liều, đơn vị, số lần, đường dùng,
+tốc độ và đơn vị tốc độ ban đầu trống; không suy ra từ tên hoặc lịch dùng.
+
+`lib/treatment-orders.ts` giữ factories, validation, chuyển sang văn bản và
+nối các dòng cũ/mới. In và “Lưu mẫu” dùng chung `ordersText`; thư viện nội dung
+hiện vẫn là văn bản nên dùng lại mẫu sẽ thêm mục văn bản, không khôi phục
+cấu trúc thuốc. Sao chép ngày giữ cấu trúc và clone sâu cả hai buổi.
+Backend cần triển khai validator tương thích trước frontend. Không cần sửa
+nội dung bản ghi cũ hàng loạt. Chưa triển khai thư viện thuốc bền vững hay
+quản lý kho; danh sách tên là dependency từ caller.
+
+`demo-orders.html` dùng cùng component với dữ liệu minh họa, giữ riêng state
+trong bộ nhớ và không nối services của ứng dụng.

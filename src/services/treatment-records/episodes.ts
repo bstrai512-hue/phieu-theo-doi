@@ -1,4 +1,4 @@
-import type { TreatmentRecord, TreatmentRecordSummary } from './contracts';
+import type { TreatmentRecord, TreatmentRecordSummary } from '../../types';
 
 /** Old records have no metadata; retain their snapshots and infer the display values. */
 export function summarizeRecord(record: TreatmentRecord): TreatmentRecordSummary {
