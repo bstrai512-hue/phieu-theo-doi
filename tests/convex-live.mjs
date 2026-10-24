@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../convex/_generated/api.js';
 import { defaults } from '../src/services/treatment-records/model.ts';
+import { makeMedicationOrder } from '../src/lib/treatment-orders.ts';
 
 const env = Object.fromEntries(readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
   .split('\n').filter(line => /^[A-Z_]+=/.test(line)).map(line => {
@@ -23,7 +24,7 @@ try {
   data.patient.name = fixtureId;
   await client.mutation(api.records.create, { workspaceKey, record: { id: fixtureId, patient: data.patient, forms: data.forms } });
   created = true;
-  assert.equal((await second.query(api.records.get, { workspaceKey: 'a'.repeat(64), id: fixtureId })).patient.name, fixtureId);
+  assert.equal((await second.query(api.records.get, { workspaceKey, id: fixtureId })).patient.name, fixtureId);
   const before = await second.query(api.workspaces.snapshot, { workspaceKey });
   await client.mutation(api.records.update, { workspaceKey, id: fixtureId, input: { patient: { ...data.patient, bed: 'TEST' } } });
   await assert.rejects(client.mutation(api.records.saveEditor, {
@@ -38,6 +39,13 @@ try {
     templates: latest.templates, expectedRevision: latest.revision,
   }), /tải lại trang/);
   const { makeInfusion } = await import('../src/forms/model.ts');
+  // Exercise the structured draft that used to fail the deployed v.string validator.
+  data.forms.treatment.rows[0].orders = {
+    version: 1, items: [{ ...makeMedicationOrder(), name: 'Paracetamon' }],
+  };
+  data.forms.treatment.rows.push({
+    ...data.forms.treatment.rows[0], id: crypto.randomUUID(), orders: 'Chỉ định cũ',
+  });
   data.forms.infusion.rows = [{ ...makeInfusion('2026-10-20'), fluid: 'Dữ liệu thử' }];
   data.forms.care.observations = [{ id: 'obs', time: '2026-10-20T08:00', values: { pulse: '80' } }];
   await client.mutation(api.records.saveEditor, { workspaceKey, id: fixtureId,
